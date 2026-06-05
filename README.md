@@ -1,91 +1,131 @@
 # TalkFlow: Privacy-First Interview English Coach
 
-TalkFlow is a privacy-first web application and Google Chrome Extension that records practice or live interviews, transcribes your speech in real-time, and provides constructive AI feedback to help you correct broken English, reduce filler words, and polish your delivery.
+TalkFlow is a privacy-first Chrome Extension that records practice or live interviews, transcribes your speech locally using **faster-whisper**, and provides AI fluency feedback using **Ollama (llama3.2:3b)** — all 100% on your own machine, no cloud API key required.
 
 ## 🌟 Key Features
-*   **Mode 1: Self Recording (Default):** Captures only your microphone. Zero legal or privacy risks.
-*   **Mode 2: Full Interview Recording:** Captures your mic + the interviewer's tab audio. Requires explicit confirmation that you obtained consent from all participants before recording.
-*   **Local-First Architecture:** All transcripts, metrics, and session history are stored strictly on your local device via browser `IndexedDB`.
-*   **Bring Your Own Key (BYO-Key):** We do not run middleman servers. The extension sends transcript data directly from your browser to Google's Gemini API endpoints using your configured API key.
-*   **Practice Arena:** A flashcard-style review dashboard with built-in text-to-speech standard voice guide and a mic repetition grading engine.
-*   **No Remote Scripts:** Built with 100% bundled assets to comply with Google Chrome Web Store Manifest V3 guidelines.
+*   **Local-First by Default:** Transcription via local faster-whisper. Analysis via local Ollama. No data leaves your machine.
+*   **Mode 1 – Self Recording:** Captures only your microphone. Zero privacy risks.
+*   **Mode 2 – Full Interview:** Captures your mic + the interviewer's browser tab audio (requires explicit consent from all participants).
+*   **Auto-Start Server:** TalkFlow can auto-launch the local server via the Native Companion (optional) or you can double-click the launcher.
+*   **Practice Arena:** Flashcard-style review with text-to-speech and mic grading.
+*   **Cloud Providers Optional:** Switch to OpenAI Whisper or Google Gemini if you prefer — your API key, your choice.
+*   **No Remote Scripts:** 100% bundled assets. Compliant with Chrome Web Store Manifest V3.
 
 ---
 
-## 🛠️ Getting Started
+## 🚀 Quick Start (5 Steps)
 
-### Method A: Load as a Chrome Extension (Recommended)
-1.  Clone this repository or download the `talkflow/` directory.
-2.  Open Google Chrome and navigate to `chrome://extensions`.
-3.  Toggle the **Developer mode** switch in the top-right corner.
-4.  Click the **Load unpacked** button in the top-left.
-5.  Select the `talkflow` directory.
-6.  Click the Extension (puzzle piece) icon in your toolbar, pin **TalkFlow**, and click it to open the side panel!
-
-### Method B: Run as a Standalone Web Page
-Simply open `index.html` directly in any modern browser or run a simple local server:
+### Step 1 — Install Ollama
+Download and install from **[ollama.com](https://ollama.com)**. Then pull the model:
 ```bash
-npx serve .
+ollama pull llama3.2:3b
+```
+Start Ollama and leave it running in the background.
+
+### Step 2 — Install Python dependencies (first time only)
+```bash
+cd local-transcriber
+pip install -r requirements.txt
+```
+> **Note:** `ffmpeg` must be on your PATH. Download from [ffmpeg.org](https://ffmpeg.org/download.html).
+
+### Step 3 — Start TalkFlow Local Companion
+**Option A — Double-click (easiest):**
+> `start-talkflow-local.bat` (in the project root)
+
+**Option B — Terminal:**
+```bash
+python local-transcriber/start_talkflow_local.py
 ```
 
-### Method C: Run Fully Local (Free & Private - Recommended)
-TalkFlow is designed to run entirely offline on your computer. Follow these steps to set up local transcription (via `faster-whisper`) and local speech analysis (via `Ollama`):
+Wait for the companion window to show **"✅ TalkFlow Local Server is running!"**
 
-1. **Install Ollama**:
-   * Download and install Ollama from [ollama.com](https://ollama.com).
-   * Pull the default analysis model in your terminal:
-     ```bash
-     ollama pull llama3.2:3b
-     ```
-   * Make sure the Ollama app is running in the background.
+### Step 4 — Load the Chrome Extension
+1. Open Chrome → `chrome://extensions`
+2. Enable **Developer mode** (top-right toggle)
+3. Click **Load unpacked** → select the `talkflow/` folder
+4. Pin TalkFlow from the Extensions toolbar → click it to open the side panel
 
-2. **Set up the local TalkFlow server**:
-   * Open your terminal and navigate to the transcriber directory:
-     ```bash
-     cd local-transcriber
-     ```
-   * Install the Python dependencies:
-     ```bash
-     pip install -r requirements.txt
-     ```
-     *Note: Ensure `ffmpeg` is installed and added to your system's PATH.*
-   * Start the TalkFlow local server:
-     ```bash
-     python server.py
-     ```
-
-3. **Open TalkFlow**:
-   * Load the Chrome extension, go to settings, and verify that **Local Transcriber** and **Local Ollama** are selected (they are active by default). Your recordings, transcriptions, and analyses are processed 100% locally!
+### Step 5 — Record
+Click **Start Recording** → speak → click **End Session & Analyze**. That's it.
 
 ---
 
-### Method D: Google Drive Sync Setup (Optional)
-TalkFlow supports syncing your session history and practice cards to a private Google Drive `appDataFolder` so you never lose your data. To enable this, you must configure a Google Cloud OAuth client ID:
+## 🤖 Auto-Start via Native Companion (Optional)
 
-1. **Get your Chrome Extension ID**:
-   * Open `chrome://extensions` in Google Chrome.
-   * Locate the loaded **TalkFlow - Interview Speech Coach** extension and copy its ID (a 32-character string, e.g. `obkblbjgokcagpdhech...`).
+The Native Companion lets Chrome start the local server **automatically** when you click Start Recording — no manual BAT file needed.
 
-2. **Configure Google Cloud Console**:
-   * Go to the [Google Cloud Console](https://console.cloud.google.com/).
-   * Create a new project or select an existing one.
-   * Go to **APIs & Services > OAuth consent screen**. Complete the required app details (select User Type *External* or *Internal*).
-   * Go to **Credentials**. Click **+ Create Credentials** and select **OAuth client ID**.
-   * Under **Application type**, choose **Chrome app**.
-   * Enter a name and paste your 32-character **Application ID** in the field.
-   * Click **Create** and copy the generated **Client ID**.
+### Setup (Windows)
+1. Load the TalkFlow extension and copy its **Extension ID** from `chrome://extensions`
+2. Double-click `local-transcriber/install_native_host_windows.bat`
+3. Paste the Extension ID when prompted
 
-3. **Update Manifest File**:
-   * Open `talkflow/manifest.json`.
-   * Find the `"oauth2"` section and replace the placeholder client ID under `"client_id"` with your copied Google Client ID.
-   * Go back to `chrome://extensions` and click the **Reload** icon on the TalkFlow extension card to apply the changes.
+After setup, clicking Start Recording auto-launches the local server. No terminal required.
+
+### Setup (macOS / Linux)
+1. Make `native_host.py` executable: `chmod +x local-transcriber/native_host.py`
+2. Create the native messaging host manifest at:
+   - **macOS:** `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.talkflow.local.json`
+   - **Linux:** `~/.config/google-chrome/NativeMessagingHosts/com.talkflow.local.json`
+3. Manifest content (update paths):
+```json
+{
+  "name": "com.talkflow.local",
+  "description": "TalkFlow Local Companion",
+  "path": "/absolute/path/to/local-transcriber/native_host.py",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID/"]
+}
+```
+4. Reload the extension.
+
+### To uninstall Native Host (Windows)
+```batch
+reg delete "HKCU\Software\Google\Chrome\NativeMessagingHosts\com.talkflow.local" /f
+```
 
 ---
 
-## 🔒 Security & Privacy Policy
-TalkFlow is designed with strict data privacy guidelines:
-1.  **No Server Uploads:** Your voice recordings and transcriptions are never transmitted to any third-party developer servers.
-2.  **API Key Safety:** Your Gemini API key is stored locally in your browser's local settings. Do not configure this extension on shared or untrusted machines.
-3.  **Automatic Audio Disposal:** Recorded voice segments are temporarily stored in browser IndexedDB during a session and are permanently deleted immediately after the local Whisper or cloud evaluation completes (unless cloud audio backup is explicitly turned ON by the user).
+## 📦 Package as Standalone Executable (optional)
 
-Please read [privacy.md](./privacy.md) and [consent.md](./consent.md) for full terms.
+Bundle the companion into a single `.exe` so users don't need Python installed:
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile --name TalkFlowLocal local-transcriber/start_talkflow_local.py
+```
+
+The executable will be in `dist/TalkFlowLocal.exe`. Update the native host manifest path to point to this `.exe` for a fully self-contained setup.
+
+---
+
+## ⚙️ Method D — Google Drive Sync Setup (Optional)
+
+TalkFlow can sync session history and practice cards to a private Google Drive `appDataFolder`.
+
+1. **Get your Extension ID** from `chrome://extensions`
+2. **Go to [Google Cloud Console](https://console.cloud.google.com/)** → Create project → APIs & Services → OAuth consent screen → Credentials → Chrome App OAuth client
+3. **Paste the generated Client ID** into `talkflow/manifest.json` under `"oauth2"."client_id"`
+4. **Reload the extension** at `chrome://extensions`
+
+---
+
+## 🔒 Security & Privacy
+
+1. **No Server Uploads:** Voice and transcripts never reach any TalkFlow-owned server.
+2. **No Silent Cloud Fallback:** If the local server is offline, TalkFlow shows an offline modal. You choose what to do next.
+3. **API Key Safety:** Any cloud API keys are stored locally in browser extension storage only.
+4. **Automatic Audio Disposal:** Recorded chunks are deleted from IndexedDB after analysis completes (unless cloud audio backup is explicitly enabled).
+5. **Cloud Audio Backup is OFF by default.**
+
+See [privacy.md](./privacy.md), [terms.md](./terms.md), and [SECURITY.md](./SECURITY.md) for full details.
+
+---
+
+## 🔮 Future: Deeper Native Companion Integration
+
+The current MVP uses the native messaging host to start the server on demand. A future version could:
+- Add a system tray icon (via `pystray`) for persistent background operation
+- Support auto-start at Windows login via a Run key registry entry
+- Bundle Ollama inside the companion for a fully zero-setup experience
+- Provide a GUI status dashboard (via `tkinter` or Electron)

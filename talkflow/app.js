@@ -845,6 +845,109 @@ async function updateRecordingUIStats() {
   }
 }
 
+// ── Server health gate (local mode) ───────────────────────────────────────────
+
+let _serverOfflineModalWired = false;
+
+/**
+ * Returns true if server is reachable.
+ * Tries: HTTP ping → native messaging auto-start → show modal.
+ */
+async function _ensureLocalServerRunning() {
+  // 1. Quick HTTP check
+  try {
+    const res = await fetch("http://127.0.0.1:8765/health", { method: "GET", signal: AbortSignal.timeout(2500) });
+    if (res.ok) {
+      console.log("[TalkFlow] Local server online ✅");
+      return true;
+    }
+  } catch (_) { /* offline */ }
+
+  console.log("[TalkFlow] Local server offline — trying native messaging auto-start...");
+
+  // 2. Try native messaging via background.js
+  try {
+    const nativeMsg = document.getElementById("server-offline-native-msg");
+    if (nativeMsg) nativeMsg.style.display = "block";
+
+    const result = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: "requestServerStart" }, resolve);
+    });
+
+    if (result?.ok) {
+      console.log("[TalkFlow] Native messaging auto-start succeeded ✅");
+      if (nativeMsg) nativeMsg.style.display = "none";
+      return true;
+    }
+
+    if (nativeMsg) nativeMsg.style.display = "none";
+
+    if (result?.noHost) {
+      console.log("[TalkFlow] Native host not registered — showing setup modal");
+    } else {
+      console.warn("[TalkFlow] Native auto-start failed:", result?.error);
+    }
+  } catch (err) {
+    console.warn("[TalkFlow] Native messaging error:", err);
+  }
+
+  // 3. Show offline modal
+  _wireServerOfflineModal();
+  const modal = document.getElementById("server-offline-modal");
+  if (modal) modal.style.display = "flex";
+  if (window.lucide) window.lucide.createIcons();
+  return false;
+}
+
+/**
+ * Wire the server-offline modal buttons (idempotent — only runs once).
+ */
+function _wireServerOfflineModal() {
+  if (_serverOfflineModalWired) return;
+  _serverOfflineModalWired = true;
+
+  const modal = document.getElementById("server-offline-modal");
+  const hide = () => { if (modal) modal.style.display = "none"; };
+
+  // Retry — re-runs the health check and, if ok, restarts recording
+  document.getElementById("btn-server-retry")?.addEventListener("click", async () => {
+    hide();
+    const ok = await _ensureLocalServerRunning();
+    if (ok) startRecording();
+  });
+
+  // Open setup guide — navigates to Settings → Diagnostics
+  document.getElementById("btn-server-setup-guide")?.addEventListener("click", () => {
+    hide();
+    switchTab("tab-settings");
+    // Scroll to diagnostics card
+    setTimeout(() => {
+      document.getElementById("diagnostics-card")?.scrollIntoView({ behavior: "smooth" });
+    }, 300);
+  });
+
+  // Switch to Cloud — changes provider to OpenAI or Gemini and closes modal
+  document.getElementById("btn-server-switch-cloud")?.addEventListener("click", async () => {
+    hide();
+    // Prefer OpenAI if key is present, otherwise Gemini
+    const openAIKey = await getLocalStorage("openai_api_key");
+    const newProvider = openAIKey ? "openai" : "gemini";
+    await setLocalStorage("transcription_provider", newProvider);
+    const sel = document.getElementById("settings-transcription-provider");
+    if (sel) sel.value = newProvider;
+    showToast(
+      `Switched to ${newProvider === "openai" ? "OpenAI Whisper" : "Gemini"}. You can change this back in Settings.`,
+      "info"
+    );
+    startRecording();
+  });
+
+  // Cancel
+  document.getElementById("btn-server-offline-cancel")?.addEventListener("click", hide);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function pauseRecording() {
   if (!isRecording || isPaused) return;
   isPaused = true;
@@ -879,6 +982,14 @@ function resumeRecording() {
 // Main Recording Loop
 async function startRecording() {
   const txProvider = await getLocalStorage("transcription_provider") || "local";
+
+  // ── Local provider: gate on server being online ────────────────────────────
+  if (txProvider === "local") {
+    const serverOk = await _ensureLocalServerRunning();
+    if (!serverOk) return; // modal is showing; user must retry or switch
+  }
+
+  // ── Gemini provider: require API key ───────────────────────────────────────
   if (txProvider === "gemini") {
     const apiKey = await getLocalStorage("gemini_api_key");
     if (!apiKey) {

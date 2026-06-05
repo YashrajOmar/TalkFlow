@@ -767,6 +767,48 @@
     </main>
   </div>
 
+  <!-- LOCAL SERVER OFFLINE MODAL -->
+  <div class="modal-backdrop" id="server-offline-modal" style="display: none;">
+    <div class="modal-box glass" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="warning-icon" style="background: rgba(239,68,68,0.15);">
+          <i data-lucide="server-off" style="color: #ef4444;"></i>
+        </div>
+        <h2>TalkFlow Local Companion is Not Running</h2>
+      </div>
+      <div class="modal-body">
+        <p class="modal-alert-text" style="color: #ef4444;">Local transcription server offline</p>
+        <p class="modal-sub-text">The TalkFlow Local Companion must be running to use local Whisper transcription.</p>
+
+        <div id="server-offline-native-msg" style="display:none; margin: 1rem 0; padding: 0.75rem 1rem; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); border-radius: 6px; font-size: 0.82rem; color: var(--text-muted);">
+          <strong style="color: var(--accent);">Auto-starting server via Native Companion…</strong><br>
+          This may take up to 15 seconds on first launch.
+        </div>
+
+        <ol style="font-size: 0.82rem; color: var(--text-muted); padding-left: 1.2rem; line-height: 2; margin: 0.75rem 0;">
+          <li>Install Ollama from <strong>ollama.com</strong> and run <code>ollama pull llama3.2:3b</code></li>
+          <li>Install Python dependencies: <code>pip install -r requirements.txt</code></li>
+          <li>Double-click <strong>start-talkflow-local.bat</strong> in the project folder</li>
+          <li>Wait for "Server is running" message, then click Retry below</li>
+        </ol>
+      </div>
+      <div class="modal-actions" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+        <button class="btn btn-primary" id="btn-server-retry">
+          <i data-lucide="refresh-cw"></i> Retry
+        </button>
+        <button class="btn btn-secondary" id="btn-server-setup-guide">
+          <i data-lucide="book-open"></i> Open Setup Guide
+        </button>
+        <button class="btn btn-secondary" id="btn-server-switch-cloud">
+          <i data-lucide="cloud"></i> Switch to Cloud
+        </button>
+        <button class="btn btn-ghost" id="btn-server-offline-cancel" style="margin-left: auto;">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- CONSENT GATING MODAL (MODE 2) -->
   <div class="modal-backdrop" id="consent-modal" style="display: none;">
     <div class="modal-box glass">

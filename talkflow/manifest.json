@@ -10,7 +10,8 @@
     "sidePanel",
     "storage",
     "windows",
-    "identity"
+    "identity",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",

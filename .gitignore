@@ -53,6 +53,16 @@ local-transcriber/temp_audio/
 oauth_secret.json
 client_secret*.json
 
+# Native Messaging Host — generated installer artifacts
+local-transcriber/com.talkflow.local.installed.json
+local-transcriber/native_host_runner.bat
+local-transcriber/native_host.log
+
+# PyInstaller output
+dist/
+build/
+*.spec
+
 # Node / Web
 node_modules/
 dist/
