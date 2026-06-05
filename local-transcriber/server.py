@@ -23,6 +23,7 @@ GPU acceleration (if you have an NVIDIA GPU + CUDA):
 import io
 import os
 import logging
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -276,6 +277,81 @@ async def analyze(req: AnalysisRequest):
     log.info(f"Analyzing transcript ({len(req.transcript.split())} words) with local Ollama...")
     result = await call_ollama_analysis(req.transcript, req.duration, req.mode)
     return JSONResponse(result)
+
+
+@app.get("/diagnostics")
+async def diagnostics():
+    """
+    Full diagnostics endpoint. Returns system info, ffmpeg status,
+    Whisper model status, Ollama status, and recent error summary.
+    Used by the Chrome extension Diagnostics panel.
+    """
+    import platform
+    import shutil
+    import sys as _sys
+
+    # ffmpeg check
+    ffmpeg_path = shutil.which("ffmpeg")
+    ffmpeg_ok = ffmpeg_path is not None
+    ffmpeg_version = None
+    if ffmpeg_ok:
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-version"],
+                capture_output=True, text=True, timeout=5
+            )
+            first_line = result.stdout.splitlines()[0] if result.stdout else ""
+            ffmpeg_version = first_line.split("version ")[1].split(" ")[0] if "version" in first_line else "unknown"
+        except Exception:
+            ffmpeg_version = "error"
+
+    # Ollama check
+    ollama_reachable = False
+    ollama_models = []
+    ollama_error = None
+    model_name = "llama3.2:3b"
+    model_available = False
+    async with httpx.AsyncClient() as client:
+        try:
+            res = await client.get("http://127.0.0.1:11434/api/tags", timeout=2.0)
+            if res.status_code == 200:
+                ollama_reachable = True
+                tags = res.json()
+                ollama_models = [m.get("name") for m in tags.get("models", [])]
+                model_available = any(m.startswith("llama3.2:3b") or m.startswith("llama3.2") for m in ollama_models)
+        except Exception as e:
+            ollama_error = str(e)
+
+    return JSONResponse({
+        "server": "ok",
+        "timestamp": __import__('datetime').datetime.utcnow().isoformat() + "Z",
+        "python": _sys.version,
+        "platform": platform.platform(),
+        "ffmpeg": {
+            "available": ffmpeg_ok,
+            "path": ffmpeg_path,
+            "version": ffmpeg_version
+        },
+        "whisper": {
+            "status": "ok" if model else "error",
+            "model": MODEL_SIZE,
+            "device": DEVICE,
+            "compute_type": COMPUTE_TYPE,
+            "model_loaded": model is not None,
+            "error": MODEL_LOAD_ERROR
+        },
+        "ollama": {
+            "reachable": ollama_reachable,
+            "models": ollama_models,
+            "target_model": model_name,
+            "model_available": model_available,
+            "error": ollama_error
+        },
+        "config": {
+            "port": PORT,
+            "host": HOST
+        }
+    })
 
 
 @app.post("/transcribe")

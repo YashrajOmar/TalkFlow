@@ -757,9 +757,14 @@
                 </div>
               </div>
             </div>
-            <button class="btn btn-secondary btn-sm" style="margin-top: 1rem;" id="btn-refresh-diagnostics" type="button">
-              <i data-lucide="refresh-cw"></i> Refresh Status
-            </button>
+            <div style="display:flex;gap:0.75rem;margin-top:1rem;flex-wrap:wrap;">
+              <button class="btn btn-secondary btn-sm" id="btn-refresh-diagnostics" type="button">
+                <i data-lucide="refresh-cw"></i> Refresh Status
+              </button>
+              <button class="btn btn-primary btn-sm" id="btn-run-diagnostics" type="button" onclick="runDiagnostics()">
+                <i data-lucide="activity"></i> Run Diagnostics
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -769,41 +774,74 @@
 
   <!-- LOCAL SERVER OFFLINE MODAL -->
   <div class="modal-backdrop" id="server-offline-modal" style="display: none;">
-    <div class="modal-box glass" style="max-width: 440px;">
+    <div class="modal-box glass" style="max-width: 460px;">
       <div class="modal-header">
         <div class="warning-icon" style="background: rgba(239,68,68,0.15);">
           <i data-lucide="server-off" style="color: #ef4444;"></i>
         </div>
-        <h2>TalkFlow Local Companion is Not Running</h2>
+        <h2>TalkFlow Setup Needed</h2>
       </div>
       <div class="modal-body">
-        <p class="modal-alert-text" style="color: #ef4444;">Local transcription server offline</p>
-        <p class="modal-sub-text">The TalkFlow Local Companion must be running to use local Whisper transcription.</p>
+        <!-- Stage badge -->
+        <span id="server-offline-stage-badge" style="display:none; font-size:0.7rem; font-weight:600; padding:0.2rem 0.6rem; border-radius:99px; background:rgba(239,68,68,0.15); color:#ef4444; margin-bottom:0.75rem; text-transform:uppercase; letter-spacing:0.05em;"></span>
 
-        <div id="server-offline-native-msg" style="display:none; margin: 1rem 0; padding: 0.75rem 1rem; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); border-radius: 6px; font-size: 0.82rem; color: var(--text-muted);">
-          <strong style="color: var(--accent);">Auto-starting server via Native Companion…</strong><br>
-          This may take up to 15 seconds on first launch.
+        <!-- Dynamic error message (populated by _updateOfflineModal) -->
+        <p class="modal-alert-text" style="color: #ef4444;" id="server-offline-error-msg">
+          TalkFlow Local Companion is not running or could not start.
+        </p>
+
+        <!-- Dynamic fix instructions -->
+        <div style="margin: 0.75rem 0; padding: 0.75rem 1rem; background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.25); border-radius: 6px;">
+          <div style="font-size:0.75rem; font-weight:600; color:var(--text-warning); margin-bottom:0.3rem;">HOW TO FIX</div>
+          <p style="font-size:0.82rem; color:var(--text-muted); margin:0;" id="server-offline-fix-msg">
+            Install TalkFlow Companion and click Retry.
+          </p>
         </div>
 
-        <ol style="font-size: 0.82rem; color: var(--text-muted); padding-left: 1.2rem; line-height: 2; margin: 0.75rem 0;">
-          <li>Install Ollama from <strong>ollama.com</strong> and run <code>ollama pull llama3.2:3b</code></li>
-          <li>Install Python dependencies: <code>pip install -r requirements.txt</code></li>
-          <li>Double-click <strong>start-talkflow-local.bat</strong> in the project folder</li>
-          <li>Wait for "Server is running" message, then click Retry below</li>
-        </ol>
+        <p style="font-size:0.75rem; color:var(--text-muted); margin:0.5rem 0 0;">TalkFlow tried to start the local AI server automatically, but something needs attention. Click Retry after fixing the issue above.</p>
       </div>
       <div class="modal-actions" style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
         <button class="btn btn-primary" id="btn-server-retry">
           <i data-lucide="refresh-cw"></i> Retry
         </button>
         <button class="btn btn-secondary" id="btn-server-setup-guide">
-          <i data-lucide="book-open"></i> Open Setup Guide
+          <i data-lucide="activity"></i> Diagnostics
         </button>
         <button class="btn btn-secondary" id="btn-server-switch-cloud">
-          <i data-lucide="cloud"></i> Switch to Cloud
+          <i data-lucide="cloud"></i> Use Cloud
         </button>
         <button class="btn btn-ghost" id="btn-server-offline-cancel" style="margin-left: auto;">
           Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DIAGNOSTICS REPORT MODAL -->
+  <div class="modal-backdrop" id="diagnostics-modal" style="display: none;">
+    <div class="modal-box glass" style="max-width: 560px; max-height: 80vh;">
+      <div class="modal-header">
+        <div class="warning-icon" style="background: rgba(99,102,241,0.15);">
+          <i data-lucide="activity" style="color: var(--accent);"></i>
+        </div>
+        <h2>TalkFlow Diagnostics</h2>
+      </div>
+      <div class="modal-body" style="padding-bottom:0;">
+        <pre id="diagnostics-modal-content" style="
+          white-space: pre-wrap; word-break: break-all;
+          font-size: 0.75rem; line-height: 1.6;
+          background: rgba(0,0,0,0.3); border-radius: 6px;
+          padding: 0.75rem 1rem; max-height: 52vh; overflow-y: auto;
+          color: var(--text-primary); font-family: 'Roboto Mono', monospace;
+          user-select: all;
+        ">Running diagnostics…</pre>
+      </div>
+      <div class="modal-actions" style="display:flex; gap:0.75rem;">
+        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(document.getElementById('diagnostics-modal-content').textContent).then(()=>showToast('Copied!','success'))">
+          <i data-lucide="copy"></i> Copy
+        </button>
+        <button class="btn btn-ghost" style="margin-left:auto;" onclick="document.getElementById('diagnostics-modal').style.display='none'">
+          Close
         </button>
       </div>
     </div>

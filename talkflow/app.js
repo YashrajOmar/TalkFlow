@@ -845,59 +845,148 @@ async function updateRecordingUIStats() {
   }
 }
 
-// ── Server health gate (local mode) ───────────────────────────────────────────
+// ── Server readiness gate (local mode) ────────────────────────────────────────
 
 let _serverOfflineModalWired = false;
 
+// Stage → human-readable message map (mirrors native_host.py stages)
+const _STAGE_MESSAGES = {
+  ffmpeg_missing:       "ffmpeg is not installed or not on PATH.",
+  server_script_missing:"TalkFlow server files are missing. Reinstall TalkFlow Companion.",
+  server_start_failed:  "Could not start TalkFlow server. Check logs for details.",
+  server_timeout:       "TalkFlow server did not respond in time. Try again or check logs.",
+  whisper_error:        "Whisper transcription model failed to load.",
+  ollama_missing:       "Ollama is not installed or not running.",
+  model_missing:        "The AI analysis model (llama3.2:3b) is not downloaded.",
+};
+
+const _STAGE_FIXES = {
+  ffmpeg_missing:       "Install TalkFlow Companion (bundles ffmpeg) or download ffmpeg from ffmpeg.org.",
+  server_script_missing:"Reinstall TalkFlow Companion from the GitHub releases page.",
+  server_start_failed:  "Run start-talkflow-local.bat to see the error, or reinstall TalkFlow Companion.",
+  server_timeout:       "Run start-talkflow-local.bat in a terminal to see detailed error output.",
+  whisper_error:        "Reinstall Python dependencies: pip install -r requirements.txt, and ensure ffmpeg is on PATH.",
+  ollama_missing:       "Install Ollama from ollama.com and start it, then click Retry.",
+  model_missing:        "Open a terminal and run: ollama pull llama3.2:3b  (takes 2-3 minutes on first run).",
+};
+
 /**
- * Returns true if server is reachable.
- * Tries: HTTP ping → native messaging auto-start → show modal.
+ * Show an inline "Preparing TalkFlow…" status in the recorder card.
+ * @param {string|null} text - Status message, or null to hide.
  */
-async function _ensureLocalServerRunning() {
-  // 1. Quick HTTP check
+function _updateReadinessStatus(text) {
+  let el = document.getElementById("readiness-status-bar");
+  if (!el) {
+    // Create it lazily under the start button
+    const startBtn = document.getElementById("btn-start-record");
+    if (!startBtn) return;
+    el = document.createElement("div");
+    el.id = "readiness-status-bar";
+    el.style.cssText = [
+      "display:flex","align-items:center","gap:0.5rem",
+      "font-size:0.8rem","color:var(--text-muted)","margin-top:0.5rem",
+      "padding:0.4rem 0.8rem","background:rgba(99,102,241,0.08)",
+      "border-radius:6px","border:1px solid rgba(99,102,241,0.2)"
+    ].join(";");
+    startBtn.parentNode.insertBefore(el, startBtn.nextSibling);
+  }
+  if (text === null) {
+    el.style.display = "none";
+    el.textContent = "";
+  } else {
+    el.style.display = "flex";
+    el.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 1.2s infinite;"></span> ${text}`;
+  }
+}
+
+/**
+ * Update the server-offline modal with stage-specific error content.
+ * @param {Object} result - ensureReady result from native host.
+ */
+function _updateOfflineModal(result) {
+  const stage = result.stage || "unknown";
+  const msg = result.message || _STAGE_MESSAGES[stage] || "TalkFlow local companion is not running.";
+  const fix = result.fix   || _STAGE_FIXES[stage]    || "Start TalkFlow Companion and click Retry.";
+
+  const msgEl = document.getElementById("server-offline-error-msg");
+  const fixEl = document.getElementById("server-offline-fix-msg");
+  const stageEl = document.getElementById("server-offline-stage-badge");
+
+  if (msgEl) msgEl.textContent = msg;
+  if (fixEl) fixEl.textContent = fix;
+  if (stageEl) {
+    stageEl.textContent = stage.replace(/_/g, " ");
+    stageEl.style.display = "inline";
+  }
+}
+
+/**
+ * Full readiness gate using native host's ensureReady action.
+ * UX flow:
+ *   1. Fast HTTP ping — if server already up, return immediately.
+ *   2. Show inline "Preparing TalkFlow…" message.
+ *   3. Call ensureReady via background.js (handles start + Ollama + model pull).
+ *   4. On success, hide status and return true.
+ *   5. On failure, show specific offline modal message and return false.
+ */
+async function _ensureReady() {
+  // 1. Fast HTTP check — server already running?
   try {
-    const res = await fetch("http://127.0.0.1:8765/health", { method: "GET", signal: AbortSignal.timeout(2500) });
-    if (res.ok) {
-      console.log("[TalkFlow] Local server online ✅");
-      return true;
-    }
-  } catch (_) { /* offline */ }
-
-  console.log("[TalkFlow] Local server offline — trying native messaging auto-start...");
-
-  // 2. Try native messaging via background.js
-  try {
-    const nativeMsg = document.getElementById("server-offline-native-msg");
-    if (nativeMsg) nativeMsg.style.display = "block";
-
-    const result = await new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: "requestServerStart" }, resolve);
+    const res = await fetch("http://127.0.0.1:8765/health", {
+      method: "GET", signal: AbortSignal.timeout(2000)
     });
-
-    if (result?.ok) {
-      console.log("[TalkFlow] Native messaging auto-start succeeded ✅");
-      if (nativeMsg) nativeMsg.style.display = "none";
+    if (res.ok) {
+      console.log("[TalkFlow] Local server already online ✅");
       return true;
     }
+  } catch (_) { /* offline, continue */ }
 
-    if (nativeMsg) nativeMsg.style.display = "none";
+  // 2. Show inline status
+  _updateReadinessStatus("Preparing TalkFlow… (this may take up to 60 seconds on first launch)");
 
-    if (result?.noHost) {
-      console.log("[TalkFlow] Native host not registered — showing setup modal");
-    } else {
-      console.warn("[TalkFlow] Native auto-start failed:", result?.error);
-    }
+  // 3. ensureReady via background → native host
+  let result = null;
+  try {
+    result = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: "ensureReady" }, (r) => {
+        resolve(r || { ok: false, error: chrome.runtime.lastError?.message, noHost: true });
+      });
+    });
   } catch (err) {
-    console.warn("[TalkFlow] Native messaging error:", err);
+    result = { ok: false, error: err.message, noHost: true };
   }
 
-  // 3. Show offline modal
+  // 4. Hide inline status
+  _updateReadinessStatus(null);
+
+  if (result?.ok) {
+    console.log("[TalkFlow] ensureReady succeeded ✅");
+    return true;
+  }
+
+  // 5. Show offline modal with stage-specific message
+  console.warn("[TalkFlow] ensureReady failed:", result);
+
+  if (result?.noHost && !result?.stage) {
+    // Native host not registered → guide user to install companion
+    result = {
+      ...result,
+      stage: "companion_not_installed",
+      message: "TalkFlow Companion is not installed or not registered.",
+      fix: "Download and run the TalkFlow Companion installer from github.com/YashrajOmar/TalkFlow/releases, then run install_native_host_windows.bat."
+    };
+  }
+
+  _updateOfflineModal(result);
   _wireServerOfflineModal();
   const modal = document.getElementById("server-offline-modal");
   if (modal) modal.style.display = "flex";
   if (window.lucide) window.lucide.createIcons();
   return false;
 }
+
+/** Keep old name as alias for backward compatibility. */
+const _ensureLocalServerRunning = _ensureReady;
 
 /**
  * Wire the server-offline modal buttons (idempotent — only runs once).
@@ -909,10 +998,10 @@ function _wireServerOfflineModal() {
   const modal = document.getElementById("server-offline-modal");
   const hide = () => { if (modal) modal.style.display = "none"; };
 
-  // Retry — re-runs the health check and, if ok, restarts recording
+  // Retry — re-runs the full readiness check
   document.getElementById("btn-server-retry")?.addEventListener("click", async () => {
     hide();
-    const ok = await _ensureLocalServerRunning();
+    const ok = await _ensureReady();
     if (ok) startRecording();
   });
 
@@ -920,23 +1009,21 @@ function _wireServerOfflineModal() {
   document.getElementById("btn-server-setup-guide")?.addEventListener("click", () => {
     hide();
     switchTab("tab-settings");
-    // Scroll to diagnostics card
     setTimeout(() => {
       document.getElementById("diagnostics-card")?.scrollIntoView({ behavior: "smooth" });
     }, 300);
   });
 
-  // Switch to Cloud — changes provider to OpenAI or Gemini and closes modal
+  // Switch to Cloud — changes provider and continues
   document.getElementById("btn-server-switch-cloud")?.addEventListener("click", async () => {
     hide();
-    // Prefer OpenAI if key is present, otherwise Gemini
     const openAIKey = await getLocalStorage("openai_api_key");
     const newProvider = openAIKey ? "openai" : "gemini";
     await setLocalStorage("transcription_provider", newProvider);
     const sel = document.getElementById("settings-transcription-provider");
     if (sel) sel.value = newProvider;
     showToast(
-      `Switched to ${newProvider === "openai" ? "OpenAI Whisper" : "Gemini"}. You can change this back in Settings.`,
+      `Switched to ${newProvider === "openai" ? "OpenAI Whisper" : "Gemini"}. Change back in Settings.`,
       "info"
     );
     startRecording();
@@ -944,6 +1031,90 @@ function _wireServerOfflineModal() {
 
   // Cancel
   document.getElementById("btn-server-offline-cancel")?.addEventListener("click", hide);
+}
+
+// ── Diagnostics ────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch /diagnostics from server (or via native host) and show the result
+ * in the diagnostics modal.
+ */
+async function runDiagnostics() {
+  const btn = document.getElementById("btn-run-diagnostics");
+  if (btn) { btn.disabled = true; btn.textContent = "Running…"; }
+
+  let diagData = null;
+  let error = null;
+
+  // Try direct HTTP first (fast if server is running)
+  try {
+    const res = await fetch("http://127.0.0.1:8765/diagnostics", {
+      method: "GET", signal: AbortSignal.timeout(5000)
+    });
+    if (res.ok) diagData = await res.json();
+  } catch (_) { /* fall through */ }
+
+  // If not available, try via background → native host
+  if (!diagData) {
+    try {
+      const reply = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "getDiagnostics" }, resolve);
+      });
+      if (reply?.ok) diagData = reply.data;
+      else error = reply?.error || "Server is not running";
+    } catch (e) {
+      error = e.message;
+    }
+  }
+
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="activity"></i> Run Diagnostics'; }
+  if (window.lucide) window.lucide.createIcons();
+
+  // Show diagnostics modal
+  const modal = document.getElementById("diagnostics-modal");
+  const content = document.getElementById("diagnostics-modal-content");
+  if (!modal || !content) {
+    showToast("Diagnostics UI not found. Reload the extension.", "error");
+    return;
+  }
+
+  if (error && !diagData) {
+    content.textContent = `Error: ${error}\n\nMake sure TalkFlow Local Companion is running.`;
+  } else if (diagData) {
+    // Format nicely
+    const lines = [
+      `TalkFlow Diagnostics — ${new Date().toLocaleString()}`,
+      "=".repeat(56),
+      "",
+      `Server           : ${diagData.server || "unknown"}`,
+      `Python           : ${(diagData.python || "").split(" ")[0]}`,
+      `Platform         : ${diagData.platform || "unknown"}`,
+      "",
+      `ffmpeg available : ${diagData.ffmpeg?.available ? "✅ Yes" : "❌ No"}`,
+      `ffmpeg path      : ${diagData.ffmpeg?.path || "not found"}`,
+      `ffmpeg version   : ${diagData.ffmpeg?.version || "unknown"}`,
+      "",
+      `Whisper model    : ${diagData.whisper?.model || "unknown"}`,
+      `Whisper status   : ${diagData.whisper?.status || "unknown"}`,
+      `Whisper loaded   : ${diagData.whisper?.model_loaded ? "✅ Yes" : "❌ No"}`,
+      `Whisper device   : ${diagData.whisper?.device || "cpu"}`,
+      diagData.whisper?.error ? `Whisper error    : ${diagData.whisper.error}` : null,
+      "",
+      `Ollama reachable : ${diagData.ollama?.reachable ? "✅ Yes" : "❌ No"}`,
+      `Target model     : ${diagData.ollama?.target_model || "llama3.2:3b"}`,
+      `Model available  : ${diagData.ollama?.model_available ? "✅ Yes" : "❌ No"}`,
+      `Installed models : ${(diagData.ollama?.models || []).join(", ") || "none"}`,
+      diagData.ollama?.error ? `Ollama error     : ${diagData.ollama.error}` : null,
+      "",
+      `Server port      : ${diagData.config?.port || 8765}`,
+      `Extension ID     : ${chrome.runtime.id}`,
+    ].filter(l => l !== null).join("\n");
+
+    content.textContent = lines;
+  }
+
+  modal.style.display = "flex";
+  if (window.lucide) window.lucide.createIcons();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

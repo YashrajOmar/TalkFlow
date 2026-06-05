@@ -1,8 +1,9 @@
-// TalkFlow Background Service Worker
-// Handles: side panel, native messaging bridge, server auto-start
+// TalkFlow Background Service Worker  v2.0
+// Handles: side panel, native messaging bridge, server auto-start + ensureReady
 
 const NATIVE_HOST = "com.talkflow.local";
-const LOCAL_URL   = "http://127.0.0.1:8765/health";
+const HEALTH_URL  = "http://127.0.0.1:8765/health";
+const DIAG_URL    = "http://127.0.0.1:8765/diagnostics";
 
 // ── Side panel ────────────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(() => {
@@ -11,8 +12,6 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // ── Message router ────────────────────────────────────────────────────────────
-// Side panel sends messages here; background handles native messaging calls
-// so the side panel (which is a web page) doesn't need direct NM access.
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === "ping") {
@@ -20,21 +19,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
-  // Check if server is reachable via HTTP
+  // Quick HTTP health check (no native host needed)
   if (request.action === "checkServerHealth") {
-    fetch(LOCAL_URL, { method: "GET" })
+    fetch(HEALTH_URL, { method: "GET", signal: AbortSignal.timeout(2500) })
       .then(res => res.ok ? res.json() : Promise.reject(res.status))
       .then(data => sendResponse({ online: true, health: data }))
       .catch(() => sendResponse({ online: false }));
-    return true; // async
+    return true;
   }
 
-  // Ask native host to start the server, then poll until up
-  if (request.action === "requestServerStart") {
-    _startViaNaviteMessaging()
+  // Full readiness check via native host (ensureReady action)
+  if (request.action === "ensureReady") {
+    _sendToNativeHost({ action: "ensureReady" })
       .then(result => sendResponse(result))
-      .catch(err  => sendResponse({ ok: false, error: err.message }));
-    return true; // async
+      .catch(err  => sendResponse({ ok: false, error: err.message, noHost: true }));
+    return true;
+  }
+
+  // Simple server start (legacy, kept for compatibility)
+  if (request.action === "requestServerStart") {
+    _sendToNativeHost({ action: "startServer" })
+      .then(result => sendResponse({ ok: result.serverRunning, ...result }))
+      .catch(err  => sendResponse({ ok: false, error: err.message, noHost: true }));
+    return true;
+  }
+
+  // Fetch /diagnostics from native host (which proxies to server)
+  if (request.action === "getDiagnostics") {
+    // Try direct HTTP first (fast if server is running)
+    fetch(DIAG_URL, { method: "GET", signal: AbortSignal.timeout(5000) })
+      .then(res => res.ok ? res.json() : Promise.reject(res.status))
+      .then(data => sendResponse({ ok: true, data }))
+      .catch(() => {
+        // Fall back to native host proxy
+        _sendToNativeHost({ action: "diagnostics" })
+          .then(result => sendResponse(result))
+          .catch(err   => sendResponse({ ok: false, error: err.message }));
+      });
+    return true;
   }
 
   return true;
@@ -43,44 +65,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // ── Native Messaging helper ───────────────────────────────────────────────────
 
 /**
- * Try to connect to the native host and ask it to start the server.
- * Returns { ok: true } if server becomes reachable, or { ok: false, error, noHost }
+ * Open a native messaging port, send one message, await one reply.
+ * Resolves with the reply object, or rejects with { noHost: true } if
+ * the native host is not registered.
+ *
+ * @param {Object} message - JSON message to send
+ * @param {number} timeoutMs - ms to wait for reply (default: 90s for model pull)
  */
-async function _startViaNaviteMessaging() {
-  return new Promise((resolve) => {
+function _sendToNativeHost(message, timeoutMs = 90000) {
+  return new Promise((resolve, reject) => {
     let port;
     try {
       port = chrome.runtime.connectNative(NATIVE_HOST);
     } catch (err) {
-      console.warn("[TalkFlow] Native host not available:", err.message);
-      return resolve({ ok: false, error: err.message, noHost: true });
+      console.warn("[TalkFlow] Native host connect error:", err.message);
+      return reject(Object.assign(new Error(err.message), { noHost: true }));
     }
 
-    const timeout = setTimeout(() => {
-      port.disconnect();
-      resolve({ ok: false, error: "Native host timed out." });
-    }, 20000);
+    const timer = setTimeout(() => {
+      try { port.disconnect(); } catch (_) {}
+      reject(new Error("Native host timed out after " + (timeoutMs / 1000) + "s."));
+    }, timeoutMs);
 
     port.onDisconnect.addListener(() => {
-      clearTimeout(timeout);
-      const err = chrome.runtime.lastError?.message || "Native host disconnected";
-      if (err.includes("not registered") || err.includes("not found") || err.includes("cannot be found")) {
-        resolve({ ok: false, error: err, noHost: true });
-      } else {
-        resolve({ ok: false, error: err });
-      }
+      clearTimeout(timer);
+      const errMsg = chrome.runtime.lastError?.message || "Native host disconnected unexpectedly";
+      const noHost = errMsg.includes("not registered") ||
+                     errMsg.includes("not found") ||
+                     errMsg.includes("cannot be found") ||
+                     errMsg.includes("Specified native messaging host not found");
+      const err = Object.assign(new Error(errMsg), { noHost });
+      reject(err);
     });
 
     port.onMessage.addListener((msg) => {
-      clearTimeout(timeout);
+      clearTimeout(timer);
       port.disconnect();
-      if (msg.serverRunning || msg.started) {
-        resolve({ ok: true });
-      } else {
-        resolve({ ok: false, error: msg.reason || "Server did not start." });
-      }
+      resolve(msg);
     });
 
-    port.postMessage({ action: "startServer" });
+    port.postMessage(message);
   });
 }
