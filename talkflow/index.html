@@ -608,11 +608,13 @@
             <div class="settings-action-list">
               <div class="settings-action-row">
                 <div class="action-info">
-                  <div class="action-title">Cloud Storage Backup (Manual)</div>
-                  <div class="action-desc">Upload reports to your own cloud storage bucket. (Currently disabled; defaults to IndexedDB local storage).</div>
+                  <div class="action-title">Active Storage Provider</div>
+                  <div class="action-desc" id="storage-provider-summary">
+                    <strong>Local Browser Storage (Default):</strong> All sessions and analysis reports are stored privately in your browser's IndexedDB. Nothing is uploaded.
+                  </div>
                 </div>
                 <div class="action-control">
-                  <span class="status-badge inactive">Disabled</span>
+                  <span class="status-badge success" id="storage-provider-badge">Local</span>
                 </div>
               </div>
 

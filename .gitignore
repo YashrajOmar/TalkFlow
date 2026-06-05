@@ -12,6 +12,11 @@ venv/
 ENV/
 env/
 
+# Whisper / Ollama model caches (can be gigabytes)
+local-transcriber/.cache/
+local-transcriber/models/
+~/.cache/huggingface/
+
 # Environment configurations
 .env
 .env.local
@@ -26,16 +31,33 @@ env/
 *.sln
 *.sw?
 
-# Logs and databases
+# Logs, temp files, databases
 *.log
 local-transcriber/temp_audio/
 *.db
 *.sqlite
+*.tmp
 
-# Browser / Extension leftovers
+# Audio recordings — never commit user audio
 *.webm
 *.wav
 *.mp3
+*.ogg
+*.mp4
+*.flac
+*.m4a
+
+# OAuth secrets — never commit these
+# Replace the placeholder client ID in manifest.json with your own;
+# do not hardcode real credentials in source files.
+oauth_secret.json
+client_secret*.json
+
+# Node / Web
 node_modules/
+dist/
+build/
+
+# OS metadata
 .DS_Store
 Thumbs.db

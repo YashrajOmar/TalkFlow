@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TalkFlow - Interview Speech Coach",
   "version": "1.0.0",
-  "description": "Privacy-first interview assistant that records, transcribes, and corrects your English using Gemini AI.",
+  "description": "Privacy-first interview coach — records, transcribes, and analyzes speech using local Whisper + Ollama. Cloud providers optional.",
   "permissions": [
     "activeTab",
     "tabs",
@@ -14,6 +14,9 @@
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/*",
+    "https://www.googleapis.com/*",
+    "https://accounts.google.com/*",
+    "https://api.openai.com/*",
     "http://127.0.0.1:8765/*",
     "http://localhost:8765/*"
   ],

@@ -41,8 +41,11 @@ let activePracticeCard = null;
 let practiceRecognition = null;
 let isPracticeListening = false;
 
-// Holds the last recording blob so user can download it before it's discarded
+// Holds the last recording blob so user can download it before it's discarded.
+// lastRecordingBlob is built lazily on download click to avoid RAM spikes.
+// _lastChunksForDownload holds the raw chunk array for on-demand assembly.
 let lastRecordingBlob = null;
+let _lastChunksForDownload = [];
 
 // Consent State
 let fullInterviewConsentConfirmed = false;
@@ -259,6 +262,34 @@ function toggleStorageSettingsUI(provider) {
   const exportCard = document.getElementById("export-import-settings-card");
   if (driveCard) driveCard.style.display = provider === "drive" ? "flex" : "none";
   if (exportCard) exportCard.style.display = provider === "export" ? "flex" : "none";
+
+  // Update the storage summary row in the Data & Privacy card
+  const summaryEl = document.getElementById("storage-provider-summary");
+  const badgeEl = document.getElementById("storage-provider-badge");
+  if (summaryEl && badgeEl) {
+    const descriptions = {
+      local: {
+        text: "<strong>Local Browser Storage (Default):</strong> All sessions and analysis reports are stored privately in your browser's IndexedDB. Nothing is uploaded.",
+        badge: "Local", cls: "success"
+      },
+      drive: {
+        text: "<strong>Google Drive Sync:</strong> Session reports and practice cards are synced to your private Google Drive appDataFolder. Audio backup is OFF by default.",
+        badge: "Drive", cls: "warning"
+      },
+      export: {
+        text: "<strong>Export / Import JSON:</strong> Manually export your data as a local JSON file or restore from a previous backup.",
+        badge: "Export", cls: "info"
+      },
+      dropbox: {
+        text: "<strong>Dropbox (Placeholder):</strong> Dropbox sync is not yet active. Data stays local until this is implemented.",
+        badge: "Dropbox", cls: "inactive"
+      }
+    };
+    const info = descriptions[provider] || descriptions.local;
+    summaryEl.innerHTML = info.text;
+    badgeEl.textContent = info.badge;
+    badgeEl.className = `status-badge ${info.cls}`;
+  }
 }
 
 async function refreshDiagnostics() {
@@ -1042,13 +1073,28 @@ async function startRecording() {
     };
 
     mediaRecorder.onstop = () => {
+      // Stop all media tracks
       if (micStream) micStream.getTracks().forEach(t => t.stop());
       if (displayStream) displayStream.getTracks().forEach(t => t.stop());
       if (mixedStream) mixedStream.getTracks().forEach(t => t.stop());
-      
+
       micAnalyser = null;
       tabAnalyser = null;
-      
+      analyserNode = null;
+
+      // Close AudioContext to release CPU and hardware resources
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close().then(() => {
+          audioContext = null;
+          console.log('[TalkFlow] AudioContext closed and released.');
+        }).catch(err => {
+          console.warn('[TalkFlow] Failed to close AudioContext:', err);
+          audioContext = null;
+        });
+      } else {
+        audioContext = null;
+      }
+
       processRecordedAudio();
     };
 
@@ -1119,7 +1165,7 @@ function stopRecording() {
   document.getElementById("live-stt-badge").style.display = "none";
   document.querySelector(".recorder-card").classList.remove("recording");
   
-  showToast("Recording captured. Transcribing and evaluating mistakes...", "info");
+  showToast("Recording captured. Processing...", "info");
 }
 
 async function processRecordedAudio() {
@@ -1129,19 +1175,41 @@ async function processRecordedAudio() {
     transStatEl.style.color = "var(--warning-color)";
   }
 
-  // Wait for all outstanding chunk writes to complete to avoid race conditions
+  // Wait for all outstanding chunk writes — use allSettled so a single
+  // failed IndexedDB write does not abort the entire post-recording flow.
   if (activeSavePromises && activeSavePromises.length > 0) {
     console.log("[TalkFlow] Waiting for", activeSavePromises.length, "pending chunk saves...");
-    await Promise.all(activeSavePromises);
+    const settled = await Promise.allSettled(activeSavePromises);
+    const failed = settled.filter(r => r.status === "rejected");
+    if (failed.length > 0) {
+      console.warn("[TalkFlow]", failed.length, "chunk save(s) failed:", failed.map(r => r.reason));
+    }
+  }
+  activeSavePromises = [];
+
+  // Guard: ensure we have an active session to load
+  console.log("[TalkFlow] activeSessionId:", activeSessionId);
+  if (!activeSessionId) {
+    showToast("No active recording session found. Please start a new recording.", "error");
+    if (transStatEl) { transStatEl.innerText = "IDLE"; transStatEl.style.color = "var(--text-muted)"; }
+    return;
   }
 
   // 1. Load chunks from IndexedDB
   let chunks = [];
   try {
     chunks = await localStore.getChunksForSession(activeSessionId);
+    console.log("[TalkFlow] chunks loaded:", chunks.length);
+    console.log("[TalkFlow] chunk sizes:", chunks.map(c => c.blob?.size));
   } catch (err) {
     console.error("Failed to load recording chunks:", err);
     showToast("Failed to load recording chunks from database.", "error");
+    return;
+  }
+
+  if (chunks.length === 0) {
+    showToast("No saved audio chunks found. Recording may not have been saved correctly. Check your microphone and try again.", "error");
+    if (transStatEl) { transStatEl.innerText = "FAILED"; transStatEl.style.color = "var(--danger-color)"; }
     return;
   }
 
@@ -1152,51 +1220,42 @@ async function processRecordedAudio() {
     if (timerDisplay) timerDisplay.innerText = formatDuration(sessionDurationSeconds);
   }
 
-  // 2. Duration check
+  // 2. Duration check — keep chunks available for download/debug; don't delete them
   if (sessionDurationSeconds < 10) {
     showToast("Recording is too short. Please record at least 10 seconds.", "warning");
-    
-    // Clean up database active session and chunks
-    await localStore.deleteChunksForSession(activeSessionId);
-    await localStore.deleteActiveSession(activeSessionId);
-    await removeLocalStorage("active_session_id");
-    activeSessionId = null;
-    updateRecordingUIStats();
 
     if (transStatEl) {
       transStatEl.innerText = "IDLE";
       transStatEl.style.color = "var(--text-muted)";
     }
-    
+
+    // Show the Download Recording button so user can retrieve what was captured
+    const dlBtn = document.getElementById('btn-download-recording');
+    if (dlBtn) dlBtn.style.display = 'inline-flex';
+    // Wire blob for download on-demand (assembled lazily)
+    lastRecordingBlob = null; // will be built on click
+    _lastChunksForDownload = chunks;
+
     const box = document.getElementById("live-transcript-box");
     if (box) {
       box.innerHTML = `
         <div class="warning-box" style="padding: 1rem; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px;">
           <h4 style="color: #ef4444; margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: bold;">Recording Too Short</h4>
-          <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Please record at least 10 seconds of speech before ending the session.</p>
+          <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted);">Please record at least 10 seconds of speech before ending the session. Chunks are still available to download above.</p>
         </div>
       `;
     }
+    // Do NOT delete chunks here — user can download or manually discard
     return;
   }
 
-  // Assembles all chunk blobs into a final recording blob for download
-  const audioBlob = chunks.length > 0
-    ? new Blob(chunks.map(c => c.blob), { type: chunks[0]?.blob?.type || 'audio/webm' })
-    : null;
-
-  lastRecordingBlob = audioBlob;
+  // Do NOT assemble a giant Blob eagerly — for long recordings this can use
+  // gigabytes of RAM. We store chunk refs and assemble on-demand at download time.
+  // The download button is shown immediately; blob is built in downloadLastRecording().
+  _lastChunksForDownload = chunks;
+  lastRecordingBlob = null; // cleared — will be assembled on download click
   const dlBtn = document.getElementById('btn-download-recording');
-  if (dlBtn && audioBlob) dlBtn.style.display = 'inline-flex';
-
-  if (!audioBlob || audioBlob.size === 0) {
-    showToast("Recording was empty — no audio data captured. Check your microphone and try again.", "error");
-    if (transStatEl) {
-      transStatEl.innerText = "FAILED";
-      transStatEl.style.color = "var(--danger-color)";
-    }
-    return;
-  }
+  if (dlBtn) dlBtn.style.display = 'inline-flex';
 
   try {
     const model = await getLocalStorage("gemini_model") || "gemini-2.5-flash";
@@ -1204,7 +1263,7 @@ async function processRecordedAudio() {
     const txProvider = await getLocalStorage("transcription_provider") || "local";
 
     console.log("[TalkFlow] Selected Transcription Provider:", txProvider);
-    console.log("[TalkFlow] Audio Blob Size:", audioBlob.size, "bytes");
+    console.log("[TalkFlow] chunks for transcription:", chunks.length);
     console.log("[TalkFlow] Recording Duration:", sessionDurationSeconds, "seconds");
 
     let finalizedTranscript = "";
@@ -1242,14 +1301,16 @@ async function processRecordedAudio() {
       finalizedTranscript = textParts.join(" ").trim();
     } else {
       // Short recording transcription
+      // Short recordings: assemble blob only for the short case (< 300s, single chunk scenario)
+      const shortBlob = new Blob(chunks.map(c => c.blob), { type: chunks[0]?.blob?.type || 'audio/webm' });
       if (txProvider === 'openai') {
         const openAIKey = await getLocalStorage("openai_api_key");
         if (!openAIKey) throw new Error('OpenAI API key is missing. Add it in Settings → Transcription Provider.');
         showToast("Transcribing with OpenAI Whisper...", "info");
-        finalizedTranscript = await transcribeAudioOpenAI(openAIKey, audioBlob);
+        finalizedTranscript = await transcribeAudioOpenAI(openAIKey, shortBlob);
       } else if (txProvider === 'local') {
         showToast("Transcribing locally with Whisper...", "info");
-        finalizedTranscript = await transcribeAudioLocal(audioBlob);
+        finalizedTranscript = await transcribeAudioLocal(shortBlob);
       } else {
         const geminiKey = await getLocalStorage("gemini_api_key");
         if (!geminiKey) {
@@ -1262,7 +1323,7 @@ async function processRecordedAudio() {
           return;
         }
         showToast("Transcribing with Gemini (may take ~10 seconds)...", "info");
-        finalizedTranscript = await transcribeAudioGemini(geminiKey, audioBlob, model);
+        finalizedTranscript = await transcribeAudioGemini(geminiKey, shortBlob, model);
       }
     }
 
@@ -1510,12 +1571,15 @@ async function processRecordedAudio() {
         syncStatEl.style.color = "var(--warning-color)";
       }
 
-      // Audio Backup Upload if enabled
+      // Audio Backup Upload if enabled — assemble blob on demand, never during recording
       const audioBackupEnabled = await getLocalStorage("drive_audio_backup") === "true";
-      if (audioBackupEnabled && audioBlob) {
+      if (audioBackupEnabled && _lastChunksForDownload && _lastChunksForDownload.length > 0) {
         try {
+          showToast("Assembling audio for Drive backup...", "info");
+          const blobType = _lastChunksForDownload[0]?.blob?.type || 'audio/webm';
+          const backupBlob = new Blob(_lastChunksForDownload.map(c => c.blob), { type: blobType });
           showToast("Uploading audio backup to Google Drive...", "info");
-          await driveStore.uploadAudioFile(savedToken, `session_${sessionData.sessionUuid}.webm`, audioBlob);
+          await driveStore.uploadAudioFile(savedToken, `session_${sessionData.sessionUuid}.webm`, backupBlob);
           showToast("Audio backup uploaded successfully.", "success");
         } catch (driveErr) {
           console.error("Audio backup failed:", driveErr);
@@ -1583,13 +1647,19 @@ async function processRecordedAudio() {
     }
   }
 }
-}
+
 
 // Download the last recording as a file
 function downloadLastRecording() {
+  // Build blob lazily if not already assembled (deferred from processRecordedAudio)
   if (!lastRecordingBlob) {
-    showToast("No recording available to download.", "warning");
-    return;
+    if (_lastChunksForDownload && _lastChunksForDownload.length > 0) {
+      const blobType = _lastChunksForDownload[0]?.blob?.type || 'audio/webm';
+      lastRecordingBlob = new Blob(_lastChunksForDownload.map(c => c.blob), { type: blobType });
+    } else {
+      showToast("No recording available to download.", "warning");
+      return;
+    }
   }
   const ext = lastRecordingBlob.type.includes('ogg') ? 'ogg' : 'webm';
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
