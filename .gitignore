@@ -1,0 +1,41 @@
+# Unrelated workspace projects
+campus-core/
+web/
+yashraj-portfolio/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# Environment configurations
+.env
+.env.local
+.env.*.local
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs and databases
+*.log
+local-transcriber/temp_audio/
+*.db
+*.sqlite
+
+# Browser / Extension leftovers
+*.webm
+*.wav
+*.mp3
+node_modules/
+.DS_Store
+Thumbs.db

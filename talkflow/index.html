@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TalkFlow - Privacy-First Interview English Coach</title>
+  <!-- SEO & Fonts -->
+  <meta name="description" content="TalkFlow is a privacy-first web assistant that records, transcribes, and corrects broken English in real-time. Make your next interview fluent and confident.">
+  <!-- Using privacy-safe system font stack -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Main Container -->
+  <div class="app-container">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="logo-area">
+        <div class="logo-icon">
+          <i data-lucide="mic"></i>
+        </div>
+        <span class="logo-text">Talk<span>Flow</span></span>
+      </div>
+      
+      <nav class="nav-menu">
+        <button class="nav-item active" id="btn-tab-dashboard" data-tab="tab-dashboard">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Dashboard</span>
+        </button>
+        <button class="nav-item" id="btn-tab-recorder" data-tab="tab-recorder">
+          <i data-lucide="disc"></i>
+          <span>Live Recorder</span>
+        </button>
+        <button class="nav-item" id="btn-tab-analysis" data-tab="tab-analysis">
+          <i data-lucide="bar-chart-2"></i>
+          <span>Analysis Hub</span>
+        </button>
+        <button class="nav-item" id="btn-tab-practice" data-tab="tab-practice">
+          <i data-lucide="sparkles"></i>
+          <span>Practice Deck</span>
+        </button>
+        <button class="nav-item" id="btn-tab-settings" data-tab="tab-settings">
+          <i data-lucide="settings"></i>
+          <span>Settings</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="privacy-badge">
+          <i data-lucide="shield-check"></i>
+          <span>Privacy Mode Active</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- HEADER -->
+      <header class="top-header">
+        <div class="header-title">
+          <h1 id="page-title">Dashboard Overview</h1>
+          <p id="page-subtitle" class="text-muted">Welcome back. Review your communication stats and practice sessions.</p>
+        </div>
+        
+        <div class="header-actions">
+          <div class="session-quick-stats">
+            <span class="stat-badge"><i data-lucide="clock"></i> Total: <strong id="total-time-badge">0m</strong></span>
+            <span class="stat-badge"><i data-lucide="alert-triangle"></i> Mistakes: <strong id="total-mistakes-badge">0</strong></span>
+          </div>
+          <button class="btn btn-primary" id="btn-quick-record">
+            <i data-lucide="plus"></i>
+            <span>New Session</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: DASHBOARD -->
+      <section class="tab-content active" id="tab-dashboard">
+        <!-- Top Stats Row -->
+        <div class="stats-grid">
+          <div class="stat-card glass">
+            <div class="stat-card-header">
+              <span class="text-muted">Fluency Index</span>
+              <div class="stat-icon cyan"><i data-lucide="trending-up"></i></div>
+            </div>
+            <div class="stat-card-value" id="dash-fluency-score">0.0<span class="val-max">/10</span></div>
+            <div class="stat-card-desc">Average clarity across all recordings</div>
+          </div>
+          
+          <div class="stat-card glass">
+            <div class="stat-card-header">
+              <span class="text-muted">Total Practice Sessions</span>
+              <div class="stat-icon purple"><i data-lucide="check-circle"></i></div>
+            </div>
+            <div class="stat-card-value" id="dash-total-sessions">0</div>
+            <div class="stat-card-desc">Completed mock recordings</div>
+          </div>
+
+          <div class="stat-card glass">
+            <div class="stat-card-header">
+              <span class="text-muted">Filler Words Frequency</span>
+              <div class="stat-icon orange"><i data-lucide="pie-chart"></i></div>
+            </div>
+            <div class="stat-card-value" id="dash-filler-count">0</div>
+            <div class="stat-card-desc">Total filler words flagged</div>
+          </div>
+
+          <div class="stat-card glass">
+            <div class="stat-card-header">
+              <span class="text-muted">Phrases Mastered</span>
+              <div class="stat-icon green"><i data-lucide="award"></i></div>
+            </div>
+            <div class="stat-card-value" id="dash-phrases-practiced">0</div>
+            <div class="stat-card-desc">Phrases repeated with &gt;80% score</div>
+          </div>
+        </div>
+
+        <div class="dashboard-details-grid">
+          <!-- Left: Recent Practice Sessions -->
+          <div class="details-column glass">
+            <div class="panel-header">
+              <h2>Recent Sessions</h2>
+              <button class="btn btn-text" id="btn-see-all-sessions">View All</button>
+            </div>
+            <div class="session-list" id="dashboard-sessions-list">
+              <div class="empty-state">
+                <i data-lucide="calendar"></i>
+                <p>No recording history found.</p>
+                <button class="btn btn-secondary btn-sm" id="btn-dash-start-first">Record Your First Session</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Top Repeated Mistakes & Filler Words -->
+          <div class="details-column glass">
+            <div class="panel-header">
+              <h2>Frequent Mistakes Tracker</h2>
+            </div>
+            <div class="mistakes-tracker-panel">
+              <div class="filler-words-pills" id="filler-words-frequency-container">
+                <!-- Filler words will be injected here -->
+                <p class="text-muted text-center" style="grid-column: span 3; font-size: 0.9rem;">Record a session to analyze filler words.</p>
+              </div>
+              
+              <div class="repeated-mistakes-list" id="dashboard-mistakes-list">
+                <div class="empty-state">
+                  <i data-lucide="zap-off"></i>
+                  <p>No repeated mistakes tracked yet.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: LIVE RECORDER -->
+      <section class="tab-content" id="tab-recorder">
+        <div class="recorder-layout">
+          <!-- Setup Panel -->
+          <div class="recorder-card glass">
+            <div class="recorder-card-header">
+              <h2>Interview Setup</h2>
+              <span class="badge badge-success"><i data-lucide="shield"></i> Local Recording Only</span>
+            </div>
+            
+            <div class="setup-options">
+              <div class="mode-selector-group">
+                <label class="mode-card" id="mode-self-label">
+                  <input type="radio" name="recording-mode" value="self" checked id="radio-mode-self">
+                  <div class="mode-card-content">
+                    <div class="mode-icon"><i data-lucide="user"></i></div>
+                    <div class="mode-title">Mode 1: Self Recording</div>
+                    <div class="mode-desc">Records only your microphone. Zero privacy risks. Recommended for personal practice.</div>
+                  </div>
+                </label>
+
+                <label class="mode-card" id="mode-full-label">
+                  <input type="radio" name="recording-mode" value="full" id="radio-mode-full">
+                  <div class="mode-card-content">
+                    <div class="mode-icon"><i data-lucide="users"></i></div>
+                    <div class="mode-title">Mode 2: Full Interview</div>
+                    <div class="mode-desc">Full Interview mode uses Chrome's tab sharing picker. Select your Meet/Zoom/YouTube tab and enable Share tab audio. Some protected media sites may block audio capture.</div>
+                  </div>
+                </label>
+              </div>
+
+              <!-- Setup Status -->
+              <div class="setup-status-box">
+                <div class="status-row">
+                  <span>Microphone Access:</span>
+                  <span id="mic-status" class="status-badge error"><i data-lucide="circle"></i> Not Checked</span>
+                </div>
+                <!-- Shown when mic permission prompt was dismissed (not seen by user) -->
+                <div class="status-row" id="mic-retry-row" style="display:none; flex-direction:column; align-items:flex-start; gap:0.4rem; padding: 0.6rem 0.8rem; background: rgba(234,179,8,0.08); border-radius: 8px; border: 1px solid rgba(234,179,8,0.3);">
+                  <span style="font-size:0.82rem; color: var(--text-muted);">👆 Chrome showed a mic permission popup at the <strong>top of your browser window</strong> (above the page, near the address bar). Click <strong>Try Again</strong>, then look up and click <strong>Allow</strong>.</span>
+                  <button class="btn btn-secondary btn-sm" id="btn-retry-mic">
+                    <i data-lucide="refresh-cw"></i> Try Again
+                  </button>
+                </div>
+                <!-- Shown only when mic is blocked in Chrome settings -->
+                <div class="status-row" id="mic-fix-row" style="display:none; flex-direction:column; align-items:flex-start; gap:0.4rem; padding: 0.6rem 0.8rem; background: rgba(239,68,68,0.08); border-radius: 8px; border: 1px solid rgba(239,68,68,0.25);">
+                  <span style="font-size:0.82rem; color: var(--text-muted);">⚠️ Microphone is blocked for this extension. Click below to open Chrome's mic settings, then find and remove the extension from the <strong>Block</strong> list.</span>
+                  <button class="btn btn-danger btn-sm" id="btn-open-mic-settings">
+                    <i data-lucide="external-link"></i> Open Chrome Mic Settings
+                  </button>
+                </div>
+                <div class="status-row" id="tab-status-row" style="display: none;">
+                  <span>Interview Tab Audio:</span>
+                  <span id="tab-status" class="status-badge error"><i data-lucide="circle"></i> Waiting for consent</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Big Controls -->
+            <div class="recorder-controls">
+              <!-- Visualizer Waveform -->
+              <div class="visualizer-wrapper">
+                <canvas id="waveform-canvas"></canvas>
+                <div class="recording-timer" id="recording-timer-display">00:00</div>
+              </div>
+
+              <!-- Silence warning banner -->
+              <div id="mic-silence-warning" style="display: none; background: #ef4444; color: white; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.75rem; text-align: center; align-items: center; justify-content: center; gap: 0.5rem;">
+                <i data-lucide="mic-off"></i> No microphone input detected. Check your selected microphone.
+              </div>
+
+              <!-- Volume indicators -->
+              <div class="recording-volume-meters" style="margin-bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <div class="meter-row" style="display: flex; align-items: center; gap: 0.5rem;">
+                  <span style="font-size: 0.75rem; width: 60px; color: var(--text-muted);">Mic Level:</span>
+                  <div class="meter-bar-container" style="flex-grow: 1; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden;">
+                    <div id="mic-volume-fill" style="width: 0%; height: 100%; background: #10b981; transition: width 0.1s ease;"></div>
+                  </div>
+                </div>
+                <div class="meter-row" id="tab-volume-row" style="display: none; align-items: center; gap: 0.5rem;">
+                  <span style="font-size: 0.75rem; width: 60px; color: var(--text-muted);">Tab Level:</span>
+                  <div class="meter-bar-container" style="flex-grow: 1; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden;">
+                    <div id="tab-volume-fill" style="width: 0%; height: 100%; background: #06b6d4; transition: width 0.1s ease;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Recovery alert panel (hidden by default) -->
+              <div id="session-recovery-panel" style="display: none; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; flex-direction: column; gap: 0.5rem;">
+                <div style="font-size: 0.85rem; font-weight: bold; color: #818cf8; display: flex; align-items: center; gap: 0.5rem;">
+                  <i data-lucide="life-buoy"></i> Unfinished Session Found
+                </div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">We found an unfinished recording. You can recover the saved audio so far or delete it.</div>
+                <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">
+                  <button class="btn btn-primary btn-sm" id="btn-recover-session" type="button">Recover</button>
+                  <button class="btn btn-secondary btn-sm" id="btn-delete-recovered" type="button">Delete</button>
+                </div>
+              </div>
+
+              <!-- Advanced Recording Stats -->
+              <div class="recording-stats-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-bottom: 1rem; background: rgba(255,255,255,0.02); padding: 0.75rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
+                <div class="stat-item"><span style="font-size:0.75rem; color:var(--text-muted);">Mode:</span> <strong id="rec-stat-mode" style="font-size:0.75rem;">Self</strong></div>
+                <div class="stat-item"><span style="font-size:0.75rem; color:var(--text-muted);">Chunks Saved:</span> <strong id="rec-stat-chunks" style="font-size:0.75rem;">0</strong></div>
+                <div class="stat-item"><span style="font-size:0.75rem; color:var(--text-muted);">Save Status:</span> <strong id="rec-stat-save-status" style="font-size:0.75rem; color:#10b981;">IDLE</strong></div>
+                <div class="stat-item"><span style="font-size:0.75rem; color:var(--text-muted);">Transcription:</span> <strong id="rec-stat-transcription" style="font-size:0.75rem; color:var(--text-muted);">IDLE</strong></div>
+                <div class="stat-item"><span style="font-size:0.75rem; color:var(--text-muted);">Sync Status:</span> <strong id="rec-stat-sync" style="font-size:0.75rem; color:var(--text-muted);">LOCAL ONLY</strong></div>
+                <div class="stat-item"><span style="font-size:0.75rem; color:var(--text-muted);">Storage Used:</span> <strong id="rec-stat-storage" style="font-size:0.75rem;">0 KB</strong></div>
+              </div>
+
+              <div class="control-buttons-row">
+                <button class="btn btn-secondary btn-lg" id="btn-test-mic">
+                  <i data-lucide="check-circle"></i> Test Microphone
+                </button>
+                <button class="btn btn-danger btn-lg btn-pulse-effect" id="btn-start-record">
+                  <i data-lucide="play-circle"></i> Start Recording
+                </button>
+                <button class="btn btn-secondary btn-lg" id="btn-pause-record" style="display: none;">
+                  <i data-lucide="pause-circle"></i> Pause
+                </button>
+                <button class="btn btn-danger btn-lg" id="btn-stop-record" style="display: none;">
+                  <i data-lucide="stop-circle"></i> End Session & Analyze
+                </button>
+                <button class="btn btn-secondary btn-sm" id="btn-download-recording" style="display: none;" title="Save your recording as a .webm audio file">
+                  <i data-lucide="download"></i> Save Recording
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Session Transcript (populated after recording ends via Gemini) -->
+          <div class="recorder-card glass flex-column">
+            <div class="recorder-card-header">
+              <h2>Session Transcript</h2>
+              <span class="status-badge active" id="live-stt-badge" style="display: none;">
+                <span class="pulsing-red-dot"></span> Processing
+              </span>
+            </div>
+            <div class="transcript-box" id="live-transcript-box">
+              <div class="empty-state">
+                <i data-lucide="file-text"></i>
+                <p>Press "Start Recording" to begin. Your transcript will appear here once you stop the session.</p>
+              </div>
+            </div>
+            <div class="transcript-footer" style="flex-direction: column; align-items: flex-start; gap: 0.4rem;">
+              <div style="display: flex; justify-content: space-between; width: 100%;">
+                <span class="text-muted" id="word-count-display">0 words spoken</span>
+                <span class="text-muted font-sm"><i data-lucide="info"></i> Transcribed by Gemini after session ends</span>
+              </div>
+              <div class="text-muted font-sm" style="font-style: italic; opacity: 0.85;">
+                Transcript appears after you click "End Session &amp; Analyze".
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: ANALYSIS HUB -->
+      <section class="tab-content" id="tab-analysis">
+        <div class="analysis-selection-header glass">
+          <div class="dropdown-wrapper">
+            <label for="select-analysis-session">Select Session: </label>
+            <select id="select-analysis-session" class="form-control">
+              <!-- Dynamically populated -->
+              <option value="">No sessions analyzed yet</option>
+            </select>
+          </div>
+          <div class="session-summary-info" id="selected-session-info" style="display: none;">
+            <span class="info-badge"><i data-lucide="calendar"></i> <span id="session-info-date">May 30, 2026</span></span>
+            <span class="info-badge"><i data-lucide="clock"></i> <span id="session-info-duration">2m 45s</span></span>
+            <span class="info-badge"><i data-lucide="user"></i> <span id="session-info-mode">Self Recording</span></span>
+          </div>
+        </div>
+
+        <div class="analysis-layout-grid" id="analysis-results-container" style="display: none;">
+          <!-- Top Overall Row -->
+          <div class="analysis-card score-banner glass">
+            <div class="score-circular-wrapper">
+              <div class="score-circle">
+                <span class="score-num" id="analysis-overall-score">0</span>
+                <span class="score-denom">/10</span>
+              </div>
+              <div class="score-label">Fluency Score</div>
+            </div>
+            
+            <div class="score-breakdown">
+              <h3>Session Overview</h3>
+              <p id="analysis-session-summary" class="text-muted">Speech analysis summary will appear here.</p>
+              <div class="quick-breakdown-badges">
+                <span class="badge badge-error"><i data-lucide="alert-circle"></i> <strong id="count-errors-badge">0</strong> Mistakes</span>
+                <span class="badge badge-warning"><i data-lucide="activity"></i> <strong id="count-filler-badge">0</strong> Fillers</span>
+                <span class="badge badge-success"><i data-lucide="thumbs-up"></i> <strong id="count-phrases-badge">0</strong> Key Phrases</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Left Column: Mistakes and Corrections -->
+          <div class="analysis-column-left">
+            <div class="column-title">
+              <i data-lucide="check-circle-2"></i>
+              <h2>Speech Corrections</h2>
+            </div>
+            
+            <div class="corrections-container" id="analysis-corrections-list">
+              <!-- Corrections cards go here -->
+            </div>
+          </div>
+
+          <!-- Right Column: Polished Answer and Phrases -->
+          <div class="analysis-column-right">
+            <!-- Better Answer Section -->
+            <div class="analysis-card glass">
+              <div class="panel-header border-bottom">
+                <div class="title-with-icon">
+                  <i data-lucide="sparkles" class="text-cyan"></i>
+                  <h2>Recommended Interview Rewrite</h2>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="btn-play-better-rewrite">
+                  <i data-lucide="volume-2"></i> Listen
+                </button>
+              </div>
+              
+              <div class="polished-content">
+                <div class="polished-text-box" id="analysis-polished-text">
+                  <!-- Polished text will be injected here -->
+                </div>
+                <div class="answer-tip">
+                  <i data-lucide="info"></i>
+                  <span>This rewrite uses professional phrasing and organizes your points more effectively. You can save this to your practice deck!</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Weak/Confusing Sentences -->
+            <div class="analysis-card glass">
+              <div class="panel-header border-bottom">
+                <div class="title-with-icon">
+                  <i data-lucide="help-circle" class="text-warning"></i>
+                  <h2>Weak or Confusing Phrasing</h2>
+                </div>
+              </div>
+              <ul class="weak-sentences-list" id="analysis-weak-sentences">
+                <!-- Weak sentences items -->
+              </ul>
+            </div>
+
+            <!-- Reusable Key Phrases -->
+            <div class="analysis-card glass">
+              <div class="panel-header border-bottom">
+                <div class="title-with-icon">
+                  <i data-lucide="bookmark" class="text-success"></i>
+                  <h2>Reusable Key Phrases</h2>
+                </div>
+              </div>
+              <ul class="key-phrases-list" id="analysis-key-phrases">
+                <!-- Reusable phrases items -->
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="empty-state glass" id="analysis-empty-state" style="margin-top: 1.5rem;">
+          <i data-lucide="activity"></i>
+          <h3>No Session Loaded</h3>
+          <p>Please record and analyze a session, or choose an existing session from the dropdown above.</p>
+        </div>
+      </section>
+
+      <!-- TAB 4: PRACTICE DECK -->
+      <section class="tab-content" id="tab-practice">
+        <div class="practice-layout">
+          <!-- Left Panel: Flashcard list -->
+          <div class="practice-sidebar glass">
+            <div class="sidebar-header">
+              <h2>My Correction Deck</h2>
+              <span class="badge badge-info" id="practice-deck-count">0 cards</span>
+            </div>
+            
+            <div class="practice-cards-list" id="practice-cards-selector-list">
+              <!-- Interactive card buttons populated here -->
+              <div class="empty-state font-sm">
+                <i data-lucide="layers"></i>
+                <p>No cards in your deck yet.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Panel: Active Practice Arena -->
+          <div class="practice-arena glass">
+            <div id="practice-arena-active" style="display: none;">
+              <div class="practice-arena-header">
+                <span class="badge" id="practice-card-category">Grammar</span>
+                <span class="card-difficulty" id="practice-card-stats">Attempted 0 times</span>
+              </div>
+
+              <!-- The Flashcard -->
+              <div class="flashcard-box">
+                <div class="card-section original">
+                  <span class="label">Original Phrasing:</span>
+                  <div class="card-text" id="practice-card-original">"I am having five years of experiences and I want to discuss about it"</div>
+                </div>
+                
+                <div class="card-divider">
+                  <i data-lucide="chevrons-down"></i>
+                </div>
+
+                <div class="card-section corrected">
+                  <span class="label">What you should say:</span>
+                  <div class="card-text" id="practice-card-corrected">"I have five years of experience, and I would like to discuss it."</div>
+                  <div class="card-explanation" id="practice-card-explanation">"Discuss" is a transitive verb and does not need the preposition "about". "Experience" is uncountable when referring to time in a job.</div>
+                </div>
+              </div>
+
+              <!-- Actions & TTS -->
+              <div class="practice-action-buttons">
+                <button class="btn btn-secondary" id="btn-tts-listen">
+                  <i data-lucide="volume-2"></i> Listen (Standard Pronunciation)
+                </button>
+                <div class="tts-speed-control">
+                  <label for="tts-rate-select">Speed:</label>
+                  <select id="tts-rate-select">
+                    <option value="0.8">0.8x</option>
+                    <option value="1" selected>1.0x</option>
+                    <option value="1.2">1.2x</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Speech Practice Scorer -->
+              <div class="mic-practice-zone">
+                <h3>Test Your Delivery</h3>
+                <p class="text-muted">Click the microphone button and read the corrected sentence aloud. We'll score your accuracy.</p>
+
+                <div class="practice-mic-row">
+                  <button class="btn-practice-mic" id="btn-practice-speak">
+                    <i data-lucide="mic"></i>
+                  </button>
+                  <div class="practice-mic-status">
+                    <div class="status-title" id="practice-mic-text">Ready to record</div>
+                    <div class="practice-transcript" id="practice-speak-transcript">"Click mic and read sentence..."</div>
+                  </div>
+                </div>
+
+                <!-- Score Result -->
+                <div class="practice-score-reveal" id="practice-score-container" style="display: none;">
+                  <div class="score-metric">
+                    <span class="score-label">Pronunciation/Word Match:</span>
+                    <span class="score-number" id="practice-accuracy-score">0%</span>
+                  </div>
+                  <div class="score-progress-bar">
+                    <div class="score-progress-fill" id="practice-score-fill" style="width: 0%;"></div>
+                  </div>
+                  <p class="practice-feedback-text" id="practice-feedback-text">Keep practicing to improve matching accuracy.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Empty Arena State -->
+            <div class="empty-state" id="practice-arena-empty">
+              <i data-lucide="sparkles"></i>
+              <h3>Select a card from the deck to start practicing</h3>
+              <p>Practice speaking natural, corrected sentences to build muscle memory and break bad speech habits.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: SETTINGS -->
+      <section class="tab-content" id="tab-settings">
+        <div class="settings-grid">
+          <!-- Left: API & Core settings -->
+          <div class="settings-card glass">
+            <h2>AI Assistant Settings</h2>
+            <p class="text-muted font-sm mb-4">Local mode is free and private. Cloud modes require API keys and may fail due to quota or model availability.</p>
+
+            <form id="form-settings" class="settings-form">
+              <!-- Transcription Provider -->
+              <div class="form-group">
+                <label for="settings-transcription-provider">Transcription Provider</label>
+                <select id="settings-transcription-provider" class="form-control">
+                  <option value="local" selected>Local Transcriber (faster-whisper, Free)</option>
+                  <option value="openai">OpenAI Whisper (Cloud)</option>
+                  <option value="gemini">Gemini Audio (Cloud)</option>
+                </select>
+              </div>
+
+              <!-- Analysis Provider -->
+              <div class="form-group">
+                <label for="settings-analysis-provider">Analysis Provider</label>
+                <select id="settings-analysis-provider" class="form-control">
+                  <option value="local_ollama" selected>Local Ollama (llama3.2:3b, Free)</option>
+                  <option value="gemini">Gemini Cloud (requires API Key)</option>
+                </select>
+              </div>
+
+              <!-- Storage Provider -->
+              <div class="form-group">
+                <label for="settings-storage-provider">Storage Provider</label>
+                <select id="settings-storage-provider" class="form-control">
+                  <option value="local" selected>Local Browser Storage (IndexedDB)</option>
+                  <option value="drive">Google Drive Sync (appDataFolder)</option>
+                  <option value="export">Export / Import JSON Backups</option>
+                  <option value="dropbox">Dropbox Sync (Optional Placeholder)</option>
+                </select>
+              </div>
+
+              <!-- Collapsible Advanced Cloud Options -->
+              <details class="advanced-cloud-options-details" style="margin-top: 1rem; margin-bottom: 1.5rem; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 0.8rem 1rem;">
+                <summary style="font-size: 0.9rem; font-weight: bold; color: var(--text-muted); cursor: pointer; outline: none;">
+                  Advanced Cloud Options (API Keys)
+                </summary>
+                
+                <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+                  <div class="form-group">
+                    <label for="settings-api-key">Gemini API Key</label>
+                    <div class="input-with-action">
+                      <input type="password" id="settings-api-key" placeholder="Enter Gemini Key (AIzaSy...)" class="form-control">
+                      <button type="button" class="btn btn-secondary btn-icon-only" id="btn-toggle-api-visibility">
+                        <i data-lucide="eye"></i>
+                      </button>
+                    </div>
+                    <div class="form-help">Get a free key from <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer">Google AI Studio</a>.</div>
+                  </div>
+
+                  <div class="form-group">
+                    <label for="settings-model">Gemini Model (for Analysis)</label>
+                    <select id="settings-model" class="form-control">
+                      <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Recommended)</option>
+                      <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group" id="openai-key-group" style="display:none;">
+                    <label for="settings-openai-key">OpenAI API Key</label>
+                    <input type="password" id="settings-openai-key" placeholder="sk-..." class="form-control">
+                    <div class="form-help">Get a key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">platform.openai.com</a>. Cost: ~$0.006/min.</div>
+                  </div>
+                </div>
+              </details>
+
+              <button type="submit" class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+            </form>
+          </div>
+
+          <!-- Right: Data Management & Privacy -->
+          <div class="settings-card glass">
+            <h2>Data &amp; Privacy Management</h2>
+            <p class="text-muted font-sm mb-4">Control how your interview metadata and records are kept. TalkFlow does not upload your data to TalkFlow-owned servers. If you use AI analysis, your transcript is sent directly from your browser to the AI provider you configure, such as Google Gemini, using your own API key.</p>
+
+            <div class="settings-action-list">
+              <div class="settings-action-row">
+                <div class="action-info">
+                  <div class="action-title">Cloud Storage Backup (Manual)</div>
+                  <div class="action-desc">Upload reports to your own cloud storage bucket. (Currently disabled; defaults to IndexedDB local storage).</div>
+                </div>
+                <div class="action-control">
+                  <span class="status-badge inactive">Disabled</span>
+                </div>
+              </div>
+
+              <div class="settings-action-row border-top">
+                <div class="action-info">
+                  <div class="action-title">Auto-Delete Raw Audio</div>
+                  <div class="action-desc">Remove recorded voice blobs from local memory immediately after transcription is finalized.</div>
+                </div>
+                <div class="action-control">
+                  <label class="switch-toggle">
+                    <input type="checkbox" id="check-auto-delete-audio" checked disabled>
+                    <span class="slider-round"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="settings-action-row border-top">
+                <div class="action-info text-danger">
+                  <div class="action-title font-bold text-red">Danger Zone: Clear Local Data</div>
+                  <div class="action-desc text-muted">Delete all interview history, analysis reports, and settings (including keys) from this browser.</div>
+                </div>
+                <div class="action-control">
+                  <button class="btn btn-danger btn-sm" id="btn-clear-database">Delete Everything</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Google Drive Sync Settings Card -->
+          <div class="settings-card glass" id="drive-sync-settings-card" style="display: none;">
+            <h2>Google Drive Sync</h2>
+            <p class="text-muted font-sm mb-4">Connect and sync your TalkFlow data to Google Drive appDataFolder.</p>
+            
+            <div style="display: flex; flex-direction: column; gap: 1rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.02); padding: 0.75rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
+                <div>
+                  <span style="font-size: 0.85rem; font-weight: bold;">Connection Status:</span>
+                  <div style="font-size: 0.8rem; color: var(--text-muted);" id="drive-conn-status">Disconnected</div>
+                </div>
+                <div id="drive-conn-actions">
+                  <button class="btn btn-primary btn-sm" id="btn-connect-drive" type="button">Connect</button>
+                  <button class="btn btn-danger btn-sm" id="btn-disconnect-drive" type="button" style="display: none;">Disconnect</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="switch-toggle" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                  <input type="checkbox" id="check-auto-sync" checked>
+                  <span class="slider-round"></span>
+                  <span style="font-size: 0.85rem; color: var(--text-muted);">Enable Auto-Sync (after each session)</span>
+                </label>
+              </div>
+
+              <div class="form-group" style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
+                <label class="switch-toggle" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                  <input type="checkbox" id="check-audio-backup">
+                  <span class="slider-round"></span>
+                  <span style="font-size: 0.85rem; color: var(--text-muted); font-weight: bold;">Include audio recordings in cloud backup</span>
+                </label>
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
+                  Note: Backing up audio uploads the final .webm file of each completed recording.
+                </div>
+                <!-- Warning shown when checking audio backup -->
+                <div id="audio-backup-warning" style="display: none; font-size: 0.75rem; color: #ef4444; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); border-radius: 4px; padding: 0.5rem; margin-top: 0.5rem;">
+                  ⚠️ Warning: Audio may contain other people's voices. Only enable this if you have permission and understand the privacy risk.
+                </div>
+              </div>
+
+              <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem;">
+                <span style="font-size: 0.8rem; color: var(--text-muted);" id="lbl-last-sync">Last sync: Never</span>
+                <button class="btn btn-secondary btn-sm" id="btn-sync-now" type="button" disabled>
+                  <i data-lucide="refresh-cw"></i> Sync Now
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Export / Import JSON Backups Card -->
+          <div class="settings-card glass" id="export-import-settings-card" style="display: none;">
+            <h2>Export & Import Backups</h2>
+            <p class="text-muted font-sm mb-4">Export your practice database to a local file, or restore from a previous backup.</p>
+            
+            <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+              <div>
+                <h4 style="font-size: 0.85rem; margin: 0 0 0.5rem 0;">Export Database</h4>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">Download all session reports, cards, and metadata as a single JSON file.</div>
+                <button class="btn btn-secondary btn-sm" id="btn-export-json" type="button">
+                  <i data-lucide="download"></i> Export JSON Backup
+                </button>
+              </div>
+
+              <div style="border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1.25rem;">
+                <h4 style="font-size: 0.85rem; margin: 0 0 0.5rem 0;">Import Database</h4>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">Upload a previously exported JSON backup. Imported data will be merged.</div>
+                
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                  <input type="file" id="file-import-json" accept=".json" style="display: none;">
+                  <button class="btn btn-secondary btn-sm" id="btn-trigger-import" type="button">
+                    <i data-lucide="upload"></i> Select Backup File
+                  </button>
+                  <span style="font-size: 0.8rem; color: var(--text-muted);" id="import-file-name">No file chosen</span>
+                </div>
+                <button class="btn btn-primary btn-sm" id="btn-import-json" type="button" style="margin-top: 0.75rem; display: none;">
+                  Upload & Merge Backup
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Diagnostics Card -->
+          <div class="settings-card glass" id="diagnostics-card">
+            <h2>Local Server Diagnostics</h2>
+            <p class="text-muted font-sm mb-4">TalkFlow runs fully local when these services are green.</p>
+            <div class="settings-action-list">
+              <div class="settings-action-row">
+                <div class="action-info">
+                  <div class="action-title">Whisper Transcription Server</div>
+                  <div class="action-desc" id="diag-whisper-desc">Checking status...</div>
+                </div>
+                <div class="action-control">
+                  <span class="status-badge" id="diag-whisper-status">Checking</span>
+                </div>
+              </div>
+              <div class="settings-action-row border-top">
+                <div class="action-info">
+                  <div class="action-title">Ollama Analysis Server</div>
+                  <div class="action-desc" id="diag-ollama-desc">Checking status...</div>
+                </div>
+                <div class="action-control">
+                  <span class="status-badge" id="diag-ollama-status">Checking</span>
+                </div>
+              </div>
+              <div class="settings-action-row border-top">
+                <div class="action-info">
+                  <div class="action-title">Ollama Llama3.2 Model</div>
+                  <div class="action-desc" id="diag-model-desc">Checking model...</div>
+                </div>
+                <div class="action-control">
+                  <span class="status-badge" id="diag-model-status">Checking</span>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" style="margin-top: 1rem;" id="btn-refresh-diagnostics" type="button">
+              <i data-lucide="refresh-cw"></i> Refresh Status
+            </button>
+          </div>
+        </div>
+      </section>
+      
+    </main>
+  </div>
+
+  <!-- CONSENT GATING MODAL (MODE 2) -->
+  <div class="modal-backdrop" id="consent-modal" style="display: none;">
+    <div class="modal-box glass">
+      <div class="modal-header">
+        <div class="warning-icon"><i data-lucide="shield-alert"></i></div>
+        <h2>Full Interview Recording Notice</h2>
+      </div>
+      <div class="modal-body">
+        <p class="modal-alert-text">This mode may capture another participant’s voice.</p>
+        <p class="modal-sub-text">Before using this mode, you must notify every participant that this session may be recorded and transcribed for your private interview communication practice. Only continue if every participant has clearly agreed. TalkFlow does not verify consent for you. You are responsible for complying with applicable recording laws, platform rules, and interview rules.</p>
+        
+        <div style="margin: 1rem 0; display: flex; gap: 0.5rem; flex-direction: column;">
+          <button class="btn btn-secondary btn-sm" id="btn-copy-consent-msg" type="button" style="align-self: flex-start;">
+            <i data-lucide="copy"></i> Copy Consent Message
+          </button>
+        </div>
+
+        <div class="consent-checklist">
+          <label class="checkbox-container">
+            <input type="checkbox" id="consent-check-announce">
+            <span class="checkbox-custom"></span>
+            <span class="checkbox-label">I informed all participants.</span>
+          </label>
+
+          <label class="checkbox-container">
+            <input type="checkbox" id="consent-check-agree">
+            <span class="checkbox-custom"></span>
+            <span class="checkbox-label">They agreed to being recorded.</span>
+          </label>
+
+          <label class="checkbox-container">
+            <input type="checkbox" id="consent-check-lawful">
+            <span class="checkbox-custom"></span>
+            <span class="checkbox-label">I understand Chrome will not notify them automatically.</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-consent-cancel">Cancel &amp; Go Back</button>
+        <button class="btn btn-primary" id="btn-consent-confirm" disabled>Proceed to Full Recording</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification System -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Script Imports -->
+  <!-- Lucide Icons (Bundled Locally) -->
+  <script src="vendor/lucide.min.js"></script>
+  <!-- Main Script -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
