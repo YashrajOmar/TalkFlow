@@ -847,7 +847,32 @@
     </div>
   </div>
 
+  <!-- CLOUD PROVIDER CONFIRMATION MODAL -->
+  <!-- Shown by _confirmCloudSwitch() before switching away from local mode -->
+  <div class="modal-backdrop" id="cloud-confirm-modal" style="display: none;">
+    <div class="modal-box glass" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="warning-icon" style="background: rgba(234,179,8,0.15);">
+          <i data-lucide="cloud" style="color: #eab308;"></i>
+        </div>
+        <h2>Switch to Cloud Transcription?</h2>
+      </div>
+      <div class="modal-body" id="cloud-confirm-body">
+        <!-- Populated dynamically by _confirmCloudSwitch() -->
+      </div>
+      <div class="modal-actions" style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+        <button class="btn btn-primary" id="btn-cloud-confirm-ok" style="background:linear-gradient(135deg,#eab308,#d97706);">
+          <i data-lucide="upload-cloud"></i> Use Cloud Now
+        </button>
+        <button class="btn btn-ghost" id="btn-cloud-confirm-cancel" style="margin-left:auto;">
+          Cancel — Keep Local
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- CONSENT GATING MODAL (MODE 2) -->
+
   <div class="modal-backdrop" id="consent-modal" style="display: none;">
     <div class="modal-box glass">
       <div class="modal-header">

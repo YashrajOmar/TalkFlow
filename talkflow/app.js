@@ -851,23 +851,31 @@ let _serverOfflineModalWired = false;
 
 // Stage → human-readable message map (mirrors native_host.py stages)
 const _STAGE_MESSAGES = {
-  ffmpeg_missing:       "ffmpeg is not installed or not on PATH.",
-  server_script_missing:"TalkFlow server files are missing. Reinstall TalkFlow Companion.",
-  server_start_failed:  "Could not start TalkFlow server. Check logs for details.",
-  server_timeout:       "TalkFlow server did not respond in time. Try again or check logs.",
-  whisper_error:        "Whisper transcription model failed to load.",
-  ollama_missing:       "Ollama is not installed or not running.",
-  model_missing:        "The AI analysis model (llama3.2:3b) is not downloaded.",
+  ffmpeg_missing:          "ffmpeg is not installed or not on PATH.",
+  server_script_missing:   "TalkFlow server files are missing. Reinstall TalkFlow Companion.",
+  server_start_failed:     "Could not start TalkFlow server. Check logs for details.",
+  server_timeout:          "TalkFlow server did not respond in time. Try again or check logs.",
+  whisper_error:           "Whisper transcription model failed to load.",
+  ollama_missing:          "Ollama is not installed or not running.",
+  model_missing:           "The AI analysis model (llama3.2:3b) is not downloaded.",
+  model_downloading:       "Downloading AI model… This takes 2–5 minutes on first use. Please wait.",
+  model_pull_timeout:      "Model download timed out after 10 minutes.",
+  companion_not_installed: "TalkFlow Companion is not installed or the browser bridge is not registered.",
+  native_host_error:       "Could not communicate with TalkFlow Companion.",
 };
 
 const _STAGE_FIXES = {
-  ffmpeg_missing:       "Install TalkFlow Companion (bundles ffmpeg) or download ffmpeg from ffmpeg.org.",
-  server_script_missing:"Reinstall TalkFlow Companion from the GitHub releases page.",
-  server_start_failed:  "Run start-talkflow-local.bat to see the error, or reinstall TalkFlow Companion.",
-  server_timeout:       "Run start-talkflow-local.bat in a terminal to see detailed error output.",
-  whisper_error:        "Reinstall Python dependencies: pip install -r requirements.txt, and ensure ffmpeg is on PATH.",
-  ollama_missing:       "Install Ollama from ollama.com and start it, then click Retry.",
-  model_missing:        "Open a terminal and run: ollama pull llama3.2:3b  (takes 2-3 minutes on first run).",
+  ffmpeg_missing:          "Install TalkFlow Companion (includes bundled ffmpeg) or download ffmpeg from ffmpeg.org.",
+  server_script_missing:   "Reinstall TalkFlow Companion from the GitHub releases page.",
+  server_start_failed:     "Run start-talkflow-local.bat to see the error, or reinstall TalkFlow Companion.",
+  server_timeout:          "Run start-talkflow-local.bat in a terminal to see detailed error output.",
+  whisper_error:           "Reinstall Python dependencies: pip install -r requirements.txt, and ensure ffmpeg is on PATH.",
+  ollama_missing:          "Install Ollama from ollama.com and start it, then click Retry.",
+  model_missing:           "Open a terminal and run: ollama pull llama3.2:3b  (takes 2–5 minutes on first run).",
+  model_downloading:       "Please wait. Do not close the browser. TalkFlow will start automatically when ready.",
+  model_pull_timeout:      "Open a terminal and run: ollama pull llama3.2:3b",
+  companion_not_installed: "Download and run TalkFlow Companion installer from github.com/YashrajOmar/TalkFlow/releases, then run install_native_host_windows.bat.",
+  native_host_error:       "Restart TalkFlow Companion. If the problem persists, reinstall it.",
 };
 
 /**
@@ -922,12 +930,14 @@ function _updateOfflineModal(result) {
 
 /**
  * Full readiness gate using native host's ensureReady action.
+ *
  * UX flow:
  *   1. Fast HTTP ping — if server already up, return immediately.
- *   2. Show inline "Preparing TalkFlow…" message.
- *   3. Call ensureReady via background.js (handles start + Ollama + model pull).
- *   4. On success, hide status and return true.
- *   5. On failure, show specific offline modal message and return false.
+ *   2. Show inline "Preparing TalkFlow…" status.
+ *   3. Subscribe to readiness_progress broadcasts (for model_downloading updates).
+ *   4. Call ensureReady via background.js (polls internally for model download).
+ *   5. On success → hide status bar, return true.
+ *   6. On failure (hard stage) → show offline modal, return false.
  */
 async function _ensureReady() {
   // 1. Fast HTTP check — server already running?
@@ -942,21 +952,38 @@ async function _ensureReady() {
   } catch (_) { /* offline, continue */ }
 
   // 2. Show inline status
-  _updateReadinessStatus("Preparing TalkFlow… (this may take up to 60 seconds on first launch)");
+  _updateReadinessStatus("Preparing TalkFlow… (this may take up to 3 minutes on first launch)");
 
-  // 3. ensureReady via background → native host
+  // 3. Subscribe to progress events from background.js polling loop
+  const progressHandler = (msg) => {
+    if (msg.action !== "readiness_progress") return;
+    if (msg.stage === "model_downloading") {
+      const elapsed = msg.pull_elapsed_seconds
+        ? ` (${msg.pull_elapsed_seconds}s elapsed)` : "";
+      _updateReadinessStatus(
+        `Downloading AI model${elapsed}… Please wait, do not close the browser.`
+      );
+    }
+  };
+  chrome.runtime.onMessage.addListener(progressHandler);
+
+  // 4. ensureReady via background → native host (handles polling loop for model pull)
   let result = null;
   try {
     result = await new Promise((resolve) => {
       chrome.runtime.sendMessage({ action: "ensureReady" }, (r) => {
-        resolve(r || { ok: false, error: chrome.runtime.lastError?.message, noHost: true });
+        resolve(r || { ok: false, stage: "native_host_error",
+          error: chrome.runtime.lastError?.message, noHost: true });
       });
     });
   } catch (err) {
-    result = { ok: false, error: err.message, noHost: true };
+    result = { ok: false, stage: "native_host_error", error: err.message, noHost: true };
   }
 
-  // 4. Hide inline status
+  // Clean up progress listener
+  chrome.runtime.onMessage.removeListener(progressHandler);
+
+  // 5. Hide inline status
   _updateReadinessStatus(null);
 
   if (result?.ok) {
@@ -964,16 +991,15 @@ async function _ensureReady() {
     return true;
   }
 
-  // 5. Show offline modal with stage-specific message
+  // 6. Show offline modal with stage-specific message
   console.warn("[TalkFlow] ensureReady failed:", result);
 
-  if (result?.noHost && !result?.stage) {
-    // Native host not registered → guide user to install companion
+  // background.js now pre-maps noHost → companion_not_installed stage;
+  // handle legacy case where stage is still missing
+  if (!result?.stage) {
     result = {
       ...result,
-      stage: "companion_not_installed",
-      message: "TalkFlow Companion is not installed or not registered.",
-      fix: "Download and run the TalkFlow Companion installer from github.com/YashrajOmar/TalkFlow/releases, then run install_native_host_windows.bat."
+      stage: result?.noHost ? "companion_not_installed" : "native_host_error",
     };
   }
 
@@ -1014,26 +1040,115 @@ function _wireServerOfflineModal() {
     }, 300);
   });
 
-  // Switch to Cloud — changes provider and continues
+  // Use Cloud — explicit confirmation before switching to cloud provider
   document.getElementById("btn-server-switch-cloud")?.addEventListener("click", async () => {
-    hide();
-    const openAIKey = await getLocalStorage("openai_api_key");
-    const newProvider = openAIKey ? "openai" : "gemini";
-    await setLocalStorage("transcription_provider", newProvider);
-    const sel = document.getElementById("settings-transcription-provider");
-    if (sel) sel.value = newProvider;
-    showToast(
-      `Switched to ${newProvider === "openai" ? "OpenAI Whisper" : "Gemini"}. Change back in Settings.`,
-      "info"
-    );
-    startRecording();
+    await _confirmCloudSwitch(hide);
   });
 
   // Cancel
   document.getElementById("btn-server-offline-cancel")?.addEventListener("click", hide);
 }
 
+// ── Cloud switch with explicit privacy confirmation ────────────────────────────
+
+/**
+ * Show a privacy confirmation dialog before switching to a cloud provider.
+ * The user must explicitly click "Use Cloud Now" to proceed.
+ * Cancelling leaves the provider as "local" — no silent data routing.
+ *
+ * @param {Function} hideOfflineModal - callback to close the offline modal
+ */
+async function _confirmCloudSwitch(hideOfflineModal) {
+  const openAIKey = await getLocalStorage("openai_api_key");
+  const geminiKey = await getLocalStorage("gemini_api_key");
+  const newProvider = openAIKey ? "openai" : (geminiKey ? "gemini" : null);
+
+  const providerName = newProvider === "openai" ? "OpenAI Whisper"
+                     : newProvider === "gemini"  ? "Google Gemini"
+                     : null;
+
+  // If no cloud key configured at all, send user to Settings instead
+  if (!providerName) {
+    hideOfflineModal();
+    showToast(
+      "No cloud API key configured. Add an OpenAI or Gemini key in Settings to use cloud mode.",
+      "warning"
+    );
+    switchTab("tab-settings");
+    return;
+  }
+
+  // Show the cloud-confirmation modal (wired lazily)
+  const modal = document.getElementById("cloud-confirm-modal");
+  const bodyEl = document.getElementById("cloud-confirm-body");
+
+  if (bodyEl) {
+    bodyEl.innerHTML = `
+      <p style="margin:0 0 0.75rem; font-size:0.9rem;">
+        You are about to switch to <strong>${providerName}</strong> for this session.
+      </p>
+      <div style="background:rgba(234,179,8,0.08); border:1px solid rgba(234,179,8,0.25);
+                  border-radius:6px; padding:0.75rem 1rem; margin-bottom:0.75rem;">
+        <div style="font-size:0.72rem; font-weight:700; color:var(--text-warning);
+                    letter-spacing:0.05em; margin-bottom:0.35rem;">PRIVACY NOTICE</div>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin:0;">
+          Your audio recording and transcription will be sent to
+          <strong>${providerName}</strong> servers using your configured API key.
+          TalkFlow does not store this data, but ${providerName}'s privacy policy applies.
+        </p>
+      </div>
+      <p style="font-size:0.75rem; color:var(--text-muted); margin:0;">
+        To change back to local processing, go to <strong>Settings → Transcription Provider → Local (faster-whisper)</strong>.
+      </p>
+    `;
+  }
+
+  if (!modal) {
+    // Fallback: browser confirm if modal HTML not present
+    const confirmed = window.confirm(
+      `Switch to ${providerName}?\n\n` +
+      `Your audio will be sent to ${providerName} servers using your API key.\n\n` +
+      `Click OK to continue with cloud transcription.`
+    );
+    if (!confirmed) return;
+    await _doCloudSwitch(hideOfflineModal, newProvider);
+    return;
+  }
+
+  // Wire the confirmation modal buttons (idempotent)
+  const confirmBtn = document.getElementById("btn-cloud-confirm-ok");
+  const cancelBtn  = document.getElementById("btn-cloud-confirm-cancel");
+
+  const cleanup = () => { modal.style.display = "none"; };
+
+  // Remove old listeners by cloning the buttons
+  const newConfirm = confirmBtn?.cloneNode(true);
+  const newCancel  = cancelBtn?.cloneNode(true);
+  if (confirmBtn && newConfirm) confirmBtn.replaceWith(newConfirm);
+  if (cancelBtn  && newCancel)  cancelBtn.replaceWith(newCancel);
+
+  document.getElementById("btn-cloud-confirm-ok")?.addEventListener("click", async () => {
+    cleanup();
+    await _doCloudSwitch(hideOfflineModal, newProvider);
+  });
+  document.getElementById("btn-cloud-confirm-cancel")?.addEventListener("click", cleanup);
+
+  modal.style.display = "flex";
+  if (window.lucide) window.lucide.createIcons();
+}
+
+async function _doCloudSwitch(hideOfflineModal, newProvider) {
+  hideOfflineModal();
+  await setLocalStorage("transcription_provider", newProvider);
+  const sel = document.getElementById("settings-transcription-provider");
+  if (sel) sel.value = newProvider;
+  const name = newProvider === "openai" ? "OpenAI Whisper" : "Google Gemini";
+  showToast(`Switched to ${name} for this session. Change back anytime in Settings.`, "info");
+  startRecording();
+}
+
 // ── Diagnostics ────────────────────────────────────────────────────────────────
+
 
 /**
  * Fetch /diagnostics from server (or via native host) and show the result
