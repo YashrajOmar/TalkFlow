@@ -22,7 +22,7 @@
     "http://localhost:8765/*"
   ],
   "oauth2": {
-    "client_id": "REPLACE_WITH_YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com",
+    "client_id": "472111352808-1pfjld8b7dtjrfktkc4pekkdabl6dnsd.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/drive.appdata"
     ]

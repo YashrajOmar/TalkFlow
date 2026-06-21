@@ -10,6 +10,15 @@ import {
 
 const CLIENT_ID_ERR = "Google Drive Sync failed: OAuth2 client ID is not configured. Please see the README to configure a Client ID.";
 
+function hasConfiguredOAuthClient() {
+  try {
+    const clientId = chrome.runtime.getManifest()?.oauth2?.client_id || "";
+    return clientId.endsWith(".apps.googleusercontent.com") && !clientId.includes("REPLACE_WITH");
+  } catch (_) {
+    return false;
+  }
+}
+
 /**
  * Obtain an OAuth token from Chrome Identity.
  * @param {boolean} interactive - Whether to prompt the user to sign in
@@ -18,6 +27,10 @@ export function getAuthToken(interactive = true) {
   return new Promise((resolve, reject) => {
     if (typeof chrome === 'undefined' || !chrome.identity) {
       reject(new Error("Chrome Identity API is not available. Please verify extension installation."));
+      return;
+    }
+    if (!hasConfiguredOAuthClient()) {
+      reject(new Error(`${CLIENT_ID_ERR} Create a Chrome App OAuth client for extension ID ${chrome.runtime.id}, paste it into manifest.json, and reload the extension.`));
       return;
     }
     chrome.identity.getAuthToken({ interactive }, (token) => {

@@ -583,8 +583,6 @@
                     <select id="settings-model" class="form-control">
                       <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (Recommended)</option>
                       <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                     </select>
                   </div>
 
@@ -603,7 +601,7 @@
           <!-- Right: Data Management & Privacy -->
           <div class="settings-card glass">
             <h2>Data &amp; Privacy Management</h2>
-            <p class="text-muted font-sm mb-4">Control how your interview metadata and records are kept. TalkFlow does not upload your data to TalkFlow-owned servers. If you use AI analysis, your transcript is sent directly from your browser to the AI provider you configure, such as Google Gemini, using your own API key.</p>
+            <p class="text-muted font-sm mb-4">Control how your interview metadata and records are kept. TalkFlow always keeps a local working copy in this browser so recording, recovery, and offline history work reliably. If Drive sync is enabled, session reports and practice cards are also copied to your private Google Drive appDataFolder. TalkFlow does not upload data to TalkFlow-owned servers.</p>
 
             <div class="settings-action-list">
               <div class="settings-action-row">
@@ -621,7 +619,7 @@
               <div class="settings-action-row border-top">
                 <div class="action-info">
                   <div class="action-title">Auto-Delete Raw Audio</div>
-                  <div class="action-desc">Remove recorded voice blobs from local memory immediately after transcription is finalized.</div>
+                <div class="action-desc">Remove raw recording chunks from this browser after transcription and analysis succeed. Session reports stay local unless you clear them.</div>
                 </div>
                 <div class="action-control">
                   <label class="switch-toggle">
@@ -646,7 +644,7 @@
           <!-- Google Drive Sync Settings Card -->
           <div class="settings-card glass" id="drive-sync-settings-card" style="display: none;">
             <h2>Google Drive Sync</h2>
-            <p class="text-muted font-sm mb-4">Connect and sync your TalkFlow data to Google Drive appDataFolder.</p>
+            <p class="text-muted font-sm mb-4">Connect and sync a private backup copy to Google Drive appDataFolder. appDataFolder is hidden from normal Drive folders; it is visible only to this app via the Drive API, not as a regular file in My Drive.</p>
             
             <div style="display: flex; flex-direction: column; gap: 1rem;">
               <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.02); padding: 0.75rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05);">
@@ -761,7 +759,7 @@
               <button class="btn btn-secondary btn-sm" id="btn-refresh-diagnostics" type="button">
                 <i data-lucide="refresh-cw"></i> Refresh Status
               </button>
-              <button class="btn btn-primary btn-sm" id="btn-run-diagnostics" type="button" onclick="runDiagnostics()">
+              <button class="btn btn-primary btn-sm" id="btn-run-diagnostics" type="button">
                 <i data-lucide="activity"></i> Run Diagnostics
               </button>
             </div>
@@ -837,10 +835,10 @@
         ">Running diagnostics…</pre>
       </div>
       <div class="modal-actions" style="display:flex; gap:0.75rem;">
-        <button class="btn btn-secondary" onclick="navigator.clipboard.writeText(document.getElementById('diagnostics-modal-content').textContent).then(()=>showToast('Copied!','success'))">
+        <button class="btn btn-secondary" id="btn-copy-diagnostics" type="button">
           <i data-lucide="copy"></i> Copy
         </button>
-        <button class="btn btn-ghost" style="margin-left:auto;" onclick="document.getElementById('diagnostics-modal').style.display='none'">
+        <button class="btn btn-ghost" id="btn-close-diagnostics" type="button" style="margin-left:auto;">
           Close
         </button>
       </div>

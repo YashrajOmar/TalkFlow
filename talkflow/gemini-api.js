@@ -1,6 +1,13 @@
 // Gemini API Wrapper for TalkFlow
 // Handles speech analysis and prompt logic using the user's Gemini key
 
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const RETIRED_GEMINI_MODELS = new Set([
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-2.0-flash',
+]);
+
 /**
  * Maps an HTTP status + error body to a clear, actionable user message.
  */
@@ -22,9 +29,13 @@ function classifyApiError(status, errorBody) {
  * @param {string} [model]
  * @returns {Promise<Object>}
  */
-export async function analyzeTranscript(apiKey, transcript, model = 'gemini-2.0-flash') {
+export async function analyzeTranscript(apiKey, transcript, model = DEFAULT_GEMINI_MODEL) {
   if (!apiKey) throw new Error('API key is missing. Please set it in Settings.');
   if (!transcript?.trim()) throw new Error('Transcript is empty — nothing to analyze.');
+
+  if (RETIRED_GEMINI_MODELS.has(model)) {
+    model = DEFAULT_GEMINI_MODEL;
+  }
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 

@@ -46,6 +46,9 @@ That's it. 🎉
 
 Only follow this section if you want to run TalkFlow from source without the installer.
 
+Run the commands below from the repository root, which is the parent of this
+`talkflow` extension directory.
+
 ### Prerequisites
 
 | Tool | Install |
@@ -63,7 +66,7 @@ Start Ollama and leave it running.
 
 ### 2 — Install Python dependencies
 ```bash
-cd local-transcriber
+cd ..\local-transcriber
 pip install -r requirements.txt
 ```
 
@@ -71,17 +74,17 @@ pip install -r requirements.txt
 
 **Option A — Double-click launcher** (recommended):
 ```
-start-talkflow-local.bat
+..\start-talkflow-local.bat
 ```
 
 **Option B — Terminal**:
 ```bash
-python local-transcriber/start_talkflow_local.py
+python ..\local-transcriber\start_talkflow_local.py
 ```
 
 **Option C — Direct server start**:
 ```bash
-python local-transcriber/server.py
+python ..\local-transcriber\server.py
 ```
 
 Wait for "Server is running!" in the terminal output.
@@ -97,7 +100,7 @@ Wait for "Server is running!" in the terminal output.
 This lets TalkFlow auto-start the server when you click Start Recording — no terminal needed.
 
 ```
-local-transcriber/install_native_host_windows.bat
+..\local-transcriber\install_native_host_windows.bat
 ```
 
 The script reads the extension ID from `talkflow_companion_config.json` automatically, or prompts you once.

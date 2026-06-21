@@ -189,7 +189,7 @@ function _mapNativeHostError(err) {
       ok: false,
       stage: "companion_not_installed",
       message: "TalkFlow Companion is not installed or the browser bridge is not registered.",
-      fix: "Download TalkFlow Companion from github.com/YashrajOmar/TalkFlow/releases and run install_native_host_windows.bat.",
+      fix: "Download TalkFlow Companion from https://github.com/YashrajOmar/TalkFlow/releases and run install_native_host_windows.bat.",
       noHost: true,
     };
   }
