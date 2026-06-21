@@ -1,9 +1,9 @@
-{
-  "name": "com.talkflow.local",
-  "description": "TalkFlow Local Companion — auto-starts the local Whisper/Ollama server",
-  "path": "REPLACE_WITH_ABSOLUTE_PATH_TO_native_host.py",
-  "type": "stdio",
-  "allowed_origins": [
-    "chrome-extension://REPLACE_WITH_YOUR_EXTENSION_ID/"
-  ]
+﻿{
+    "path":  "C:\\Users\\yashr\\Downloads\\Antigravity\\local-transcriber\\native_host_runner.bat",
+    "description":  "TalkFlow Local Companion - auto-starts local Whisper/Ollama server",
+    "name":  "com.talkflow.local",
+    "allowed_origins":  [
+                            "chrome-extension://jgaeilphbojicaanlhlgilkjklfmjhal/"
+                        ],
+    "type":  "stdio"
 }

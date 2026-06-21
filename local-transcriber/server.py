@@ -145,7 +145,8 @@ Transcript to analyze:
 "{transcript}"
 """
     
-    async with httpx.AsyncClient() as client:
+    timeout = httpx.Timeout(180.0, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         try:
             response = await client.post(
                 "http://127.0.0.1:11434/api/generate",
@@ -157,18 +158,23 @@ Transcript to analyze:
                         "temperature": 0.2
                     },
                     "format": "json"
-                },
-                timeout=45.0
+                }
             )
         except (httpx.ConnectError, httpx.ConnectTimeout):
             raise HTTPException(
                 status_code=503,
                 detail="Local analysis server is not running. Start Ollama and run: ollama pull llama3.2:3b"
             )
+        except httpx.ReadTimeout:
+            raise HTTPException(
+                status_code=504,
+                detail="Ollama analysis timed out after 180 seconds. Keep Ollama running and try again; the first request can be slower while the model loads."
+            )
         except Exception as e:
+            log.exception("Unexpected Ollama communication failure")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to communicate with Ollama: {str(e)}"
+                detail=f"Failed to communicate with Ollama ({type(e).__name__}): {str(e) or repr(e)}"
             )
 
         if response.status_code == 404:
@@ -211,6 +217,26 @@ Transcript to analyze:
                         analysis_result[field] = False
                     else:
                         analysis_result[field] = ""
+
+            # Do not trust the model to apply the speech-length gate consistently.
+            # Enforce it from the actual transcript before returning data to the UI.
+            word_count = len(transcript.split())
+            if word_count < 15:
+                analysis_result["overallScore"] = 0
+                analysis_result["summary"] = ""
+                analysis_result["corrections"] = []
+                analysis_result["betterAnswer"] = ""
+                analysis_result["weakSentences"] = []
+                analysis_result["reusablePhrases"] = []
+                analysis_result["actionPlan"] = []
+                analysis_result["insufficientSpeech"] = True
+            else:
+                analysis_result["insufficientSpeech"] = False
+                try:
+                    score = int(analysis_result.get("overallScore", 5))
+                except (TypeError, ValueError):
+                    score = 5
+                analysis_result["overallScore"] = max(1, min(10, score))
             
             return analysis_result
         except Exception as exc:
