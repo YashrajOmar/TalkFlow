@@ -1377,6 +1377,22 @@ async function startRecording() {
     micStream = await acquireMicStream();
     updateMicStatusUI("granted");
 
+    // Guard: if the OS or browser kills the mic track (e.g. side-panel
+    // focus loss, system audio switch, timeout) — stop recording cleanly
+    // rather than silently capturing silence for the rest of the session.
+    micStream.getAudioTracks().forEach(track => {
+      track.onended = () => {
+        if (isRecording) {
+          console.warn('[TalkFlow] Mic track ended unexpectedly — stopping recording.');
+          showToast(
+            'Microphone disconnected. Recording stopped. Check your mic and start a new session.',
+            'error'
+          );
+          stopRecording();
+        }
+      };
+    });
+
     // Initialize AudioContext & Analyse node for mic
     if (!audioContext) {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -1570,6 +1586,26 @@ async function startRecording() {
 
     isRecording = true;
     isPaused = false;
+
+    // ── UI: swap Start → Stop buttons ──────────────────────────────────────
+    document.getElementById("btn-start-record").style.display = "none";
+    document.getElementById("btn-test-mic").style.display = "none";
+    document.getElementById("btn-download-recording").style.display = "none";
+    document.getElementById("btn-stop-record").style.display = "inline-flex";
+    document.getElementById("btn-pause-record").style.display = "inline-flex";
+    document.getElementById("btn-pause-record").innerHTML = '<i data-lucide="pause-circle"></i> Pause';
+    if (window.lucide) window.lucide.createIcons();
+
+    document.getElementById("live-stt-badge").style.display = "none";
+    document.querySelector(".recorder-card").classList.add("recording");
+
+    // Reset transcript box
+    const _txBox = document.getElementById("live-transcript-box");
+    if (_txBox) _txBox.innerHTML = '<div class="empty-state"><p class="text-muted">Recording in progress. Transcript will appear here after you stop.</p></div>';
+    rawTranscriptText = "";
+    currentInterimText = "";
+    // ───────────────────────────────────────────────────────────────────────
+
     initAudioVisualizer(mixedStream);
     mediaRecorder.start(CHUNK_DURATION); // timeslices fired every CHUNK_DURATION ms
     if (tabMediaRecorder) tabMediaRecorder.start(CHUNK_DURATION);
