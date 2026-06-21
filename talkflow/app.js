@@ -18,6 +18,7 @@ const CHUNK_DURATION = 60000; // Change to 10000 (10s) for testing chunking/reco
 let db = null;
 let currentTab = "tab-dashboard";
 let mediaRecorder = null;
+let tabMediaRecorder = null;
 let audioChunks = [];
 let audioContext = null;
 let audioSourceMic = null;
@@ -31,6 +32,8 @@ let isPaused = false;
 let recordStartTime = 0;
 let timerInterval = null;
 let sessionDurationSeconds = 0;
+let currentChunkStartSeconds = 0;
+let currentChunkStartBySpeaker = { you: 0, interviewer: 0 };
 
 let speechRecognition = null;
 let rawTranscriptText = "";
@@ -205,7 +208,11 @@ function showToast(message, type = "info") {
 // ----------------------------------------------------
 async function loadSettings() {
   const apiKey = await getLocalStorage("gemini_api_key");
-  const model = await getLocalStorage("gemini_model") || "gemini-2.5-flash";
+  let model = await getLocalStorage("gemini_model") || "gemini-2.5-flash";
+  if (["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"].includes(model)) {
+    model = "gemini-2.5-flash";
+    await setLocalStorage("gemini_model", model);
+  }
   const provider = await getLocalStorage("transcription_provider") || "local";
   const analysisProvider = await getLocalStorage("analysis_provider") || "local_ollama";
   const openAIKey = await getLocalStorage("openai_api_key") || "";
@@ -254,7 +261,17 @@ async function saveSettings(e) {
   await setLocalStorage("drive_audio_backup", audioBackup ? "true" : "false");
 
   toggleStorageSettingsUI(storageProvider);
-  showToast("Settings saved successfully!", "success");
+  if (storageProvider === "drive") {
+    const token = await getLocalStorage("drive_oauth_token");
+    showToast(
+      token
+        ? "Settings saved. Sessions will keep a local working copy and sync a private backup to Google Drive."
+        : "Settings saved. Click Connect in Google Drive Sync to enable cloud backup.",
+      token ? "success" : "warning"
+    );
+  } else {
+    showToast("Settings saved successfully!", "success");
+  }
 }
 
 function toggleStorageSettingsUI(provider) {
@@ -273,7 +290,7 @@ function toggleStorageSettingsUI(provider) {
         badge: "Local", cls: "success"
       },
       drive: {
-        text: "<strong>Google Drive Sync:</strong> Session reports and practice cards are synced to your private Google Drive appDataFolder. Audio backup is OFF by default.",
+        text: "<strong>Google Drive Sync:</strong> TalkFlow keeps a local working copy for reliability and syncs a private backup to Google Drive appDataFolder when connected. Audio backup is OFF by default.",
         badge: "Drive", cls: "warning"
       },
       export: {
@@ -664,17 +681,21 @@ function initAudioVisualizer(stream) {
   }
   const source = audioContext.createMediaStreamSource(stream);
   analyserNode = audioContext.createAnalyser();
-  analyserNode.fftSize = 2048;
+  analyserNode.fftSize = 1024; // Reduced from 2048 — lower CPU/GPU load in side panel
   source.connect(analyserNode);
 
   const bufferLength = analyserNode.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLength);
 
   lastSoundTime = Date.now();
-
-  function draw() {
+  // Throttle to ~30 fps to reduce GPU pressure when running in the side panel.
+  // At 60 fps the rAF loop was consuming a full CPU core when the IDE was open.
+  let _lastDrawTs = 0;
+  function draw(ts) {
     if (!isRecording && !isPaused) return;
     canvasAnimationId = requestAnimationFrame(draw);
+    if (ts - _lastDrawTs < 33) return; // ~30 fps cap
+    _lastDrawTs = ts;
     analyserNode.getByteTimeDomainData(dataArray);
 
     ctx.fillStyle = "rgba(11, 15, 25, 0.4)"; // dark theme background color
@@ -874,7 +895,7 @@ const _STAGE_FIXES = {
   model_missing:           "Open a terminal and run: ollama pull llama3.2:3b  (takes 2–5 minutes on first run).",
   model_downloading:       "Please wait. Do not close the browser. TalkFlow will start automatically when ready.",
   model_pull_timeout:      "Open a terminal and run: ollama pull llama3.2:3b",
-  companion_not_installed: "Download and run TalkFlow Companion installer from github.com/YashrajOmar/TalkFlow/releases, then run install_native_host_windows.bat.",
+  companion_not_installed: "Download and run TalkFlow Companion installer from https://github.com/YashrajOmar/TalkFlow/releases, then run install_native_host_windows.bat.",
   native_host_error:       "Restart TalkFlow Companion. If the problem persists, reinstall it.",
 };
 
@@ -1237,7 +1258,14 @@ async function runDiagnostics() {
 function pauseRecording() {
   if (!isRecording || isPaused) return;
   isPaused = true;
-  mediaRecorder.pause();
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.requestData();
+    mediaRecorder.pause();
+  }
+  if (tabMediaRecorder && tabMediaRecorder.state === "recording") {
+    tabMediaRecorder.requestData();
+    tabMediaRecorder.pause();
+  }
   clearInterval(timerInterval);
   const btnPause = document.getElementById("btn-pause-record");
   if (btnPause) {
@@ -1250,7 +1278,15 @@ function pauseRecording() {
 function resumeRecording() {
   if (!isRecording || !isPaused) return;
   isPaused = false;
-  mediaRecorder.resume();
+  currentChunkStartSeconds = sessionDurationSeconds;
+  currentChunkStartBySpeaker.you = sessionDurationSeconds;
+  currentChunkStartBySpeaker.interviewer = sessionDurationSeconds;
+  if (mediaRecorder && mediaRecorder.state === "paused") {
+    mediaRecorder.resume();
+  }
+  if (tabMediaRecorder && tabMediaRecorder.state === "paused") {
+    tabMediaRecorder.resume();
+  }
   
   timerInterval = setInterval(() => {
     sessionDurationSeconds++;
@@ -1427,29 +1463,35 @@ async function startRecording() {
     const existingChunks = await localStore.getChunksForSession(activeSessionId);
     let chunkIndex = existingChunks.length;
 
-    // 4. Setup MediaRecorder with 60s timeslices
+    // 4. Setup MediaRecorders with 60s timeslices.
+    // Full Interview mode records mic and tab as separate tracks so we can
+    // analyze the candidate without confusing interviewer speech as mistakes.
     audioChunks = [];
-    mediaRecorder = new MediaRecorder(mixedStream);
+    mediaRecorder = new MediaRecorder(micStream);
     
-    let chunkStartTime = Date.now();
     recordStartTime = wasRecovered ? (Date.now() - (sessionDurationSeconds * 1000)) : Date.now();
+    currentChunkStartSeconds = sessionDurationSeconds;
+    currentChunkStartBySpeaker = {
+      you: sessionDurationSeconds,
+      interviewer: sessionDurationSeconds
+    };
 
-    mediaRecorder.ondataavailable = (event) => {
+    const saveRecordedChunk = (event, speaker = "you") => {
       if (event.data && event.data.size > 0) {
-        const now = Date.now();
-        const start = chunkStartTime;
-        const end = now;
-        chunkStartTime = now;
-
         const currentChunkIndex = chunkIndex++;
         const blob = event.data;
+        const startSeconds = currentChunkStartBySpeaker[speaker] ?? currentChunkStartSeconds;
+        const endSeconds = Math.max(startSeconds, sessionDurationSeconds);
+        currentChunkStartBySpeaker[speaker] = endSeconds;
+        if (speaker === "you") currentChunkStartSeconds = endSeconds;
 
         // Save chunk immediately to IndexedDB
         const chunkRecord = {
           sessionId: activeSessionId,
           chunkIndex: currentChunkIndex,
-          startTime: Math.round((start - recordStartTime) / 1000),
-          endTime: Math.round((end - recordStartTime) / 1000),
+          speaker,
+          startTime: startSeconds,
+          endTime: endSeconds,
           blob: blob,
           transcriptionStatus: "pending",
           cloudSyncStatus: "local"
@@ -1468,9 +1510,15 @@ async function startRecording() {
         activeSavePromises.push(savePromise);
       }
     };
+    mediaRecorder.ondataavailable = (event) => saveRecordedChunk(event, "you");
 
-    mediaRecorder.onstop = () => {
-      // Stop all media tracks
+    let stoppedRecorders = 0;
+    let expectedRecorderStops = 1;
+    const finalizeAfterAllRecordersStop = () => {
+      stoppedRecorders++;
+      if (stoppedRecorders < expectedRecorderStops) return;
+
+      // Stop all media tracks only after every recorder has emitted final data.
       if (micStream) micStream.getTracks().forEach(t => t.stop());
       if (displayStream) displayStream.getTracks().forEach(t => t.stop());
       if (mixedStream) mixedStream.getTracks().forEach(t => t.stop());
@@ -1478,6 +1526,7 @@ async function startRecording() {
       micAnalyser = null;
       tabAnalyser = null;
       analyserNode = null;
+      tabMediaRecorder = null;
 
       // Close AudioContext to release CPU and hardware resources
       if (audioContext && audioContext.state !== 'closed') {
@@ -1494,35 +1543,36 @@ async function startRecording() {
 
       processRecordedAudio();
     };
+    mediaRecorder.onstop = finalizeAfterAllRecordersStop;
 
-    // 5. UI Updates
-    document.getElementById("btn-start-record").style.display = "none";
-    document.getElementById("btn-test-mic").style.display = "none";
-    document.getElementById("btn-download-recording").style.display = "none";
-    document.getElementById("btn-stop-record").style.display = "inline-flex";
-    document.getElementById("btn-pause-record").style.display = "inline-flex";
-    document.getElementById("btn-pause-record").innerHTML = '<i data-lucide="pause-circle"></i> Pause';
-    if (window.lucide) window.lucide.createIcons();
+    tabMediaRecorder = null;
+    if (selectedMode === "full" && audioSourceTab) {
+      const tabTrack = displayStream?.getAudioTracks()[0];
+      if (tabTrack) {
+        tabMediaRecorder = new MediaRecorder(new MediaStream([tabTrack]));
+        tabMediaRecorder.ondataavailable = (event) => saveRecordedChunk(event, "interviewer");
+        tabMediaRecorder.onstop = finalizeAfterAllRecordersStop;
+        expectedRecorderStops = 2;
+      }
+    }
 
-    document.getElementById("live-stt-badge").style.display = "none";
-    document.querySelector(".recorder-card").classList.add("recording");
-
-    const box = document.getElementById("live-transcript-box");
-    box.innerHTML = '<div class="empty-state"><p class="text-muted">Recording in progress. Transcript will appear here after you stop.</p></div>';
-    rawTranscriptText = "";
-    currentInterimText = "";
-
-    // Timer setup
-    document.getElementById("recording-timer-display").innerText = formatDuration(sessionDurationSeconds);
+    // Timer setup — always clear any stale interval and reset to 0 first.
+    // Without this, repeated recordings stack setIntervals and the timer
+    // accelerates (adds N extra ticks/sec where N = number of prior recordings).
+    clearInterval(timerInterval);
+    timerInterval = null;
+    sessionDurationSeconds = 0;
+    document.getElementById("recording-timer-display").innerText = formatDuration(0);
     timerInterval = setInterval(() => {
       sessionDurationSeconds++;
       document.getElementById("recording-timer-display").innerText = formatDuration(sessionDurationSeconds);
     }, 1000);
 
-    initAudioVisualizer(mixedStream);
-    mediaRecorder.start(CHUNK_DURATION); // timeslices fired every CHUNK_DURATION ms
     isRecording = true;
     isPaused = false;
+    initAudioVisualizer(mixedStream);
+    mediaRecorder.start(CHUNK_DURATION); // timeslices fired every CHUNK_DURATION ms
+    if (tabMediaRecorder) tabMediaRecorder.start(CHUNK_DURATION);
     showToast("Recording started. Click \"End Session & Analyze\" when done.", "success");
 
   } catch (err) {
@@ -1553,6 +1603,9 @@ function stopRecording() {
 
   if (mediaRecorder && mediaRecorder.state !== "inactive") {
     mediaRecorder.stop();
+  }
+  if (tabMediaRecorder && tabMediaRecorder.state !== "inactive") {
+    tabMediaRecorder.stop();
   }
 
   document.getElementById("btn-start-record").style.display = "inline-flex";
@@ -1663,8 +1716,97 @@ async function processRecordedAudio() {
     console.log("[TalkFlow] chunks for transcription:", chunks.length);
     console.log("[TalkFlow] Recording Duration:", sessionDurationSeconds, "seconds");
 
+    async function transcribeBlob(blob) {
+      if (txProvider === 'openai') {
+        const openAIKey = await getLocalStorage("openai_api_key");
+        if (!openAIKey) throw new Error('OpenAI API key is missing. Add it in Settings.');
+        try {
+          return await transcribeAudioOpenAI(openAIKey, blob);
+        } catch (err) {
+          console.warn("[TalkFlow] OpenAI transcription failed, falling back to local:", err);
+          showToast("Cloud transcription failed. Falling back to local Whisper.", "warning");
+          return await transcribeAudioLocal(blob);
+        }
+      }
+      if (txProvider === 'local') {
+        return await transcribeAudioLocal(blob);
+      }
+      const geminiKey = await getLocalStorage("gemini_api_key");
+      if (!geminiKey) {
+        showToast("Gemini API key is not set. Go to Settings and add your key for Gemini transcription.", "error");
+        switchTab("tab-settings");
+        if (transStatEl) {
+          transStatEl.innerText = "FAILED";
+          transStatEl.style.color = "var(--danger-color)";
+        }
+        throw new Error("Gemini API key missing.");
+      }
+      try {
+        return await transcribeAudioGemini(geminiKey, blob, model);
+      } catch (err) {
+        console.warn("[TalkFlow] Gemini transcription failed, falling back to local:", err);
+        showToast("Gemini transcription failed. Falling back to local Whisper.", "warning");
+        return await transcribeAudioLocal(blob);
+      }
+    }
+
+    async function transcribeChunkList(chunkList, label) {
+      if (!chunkList.length) return { text: "", segments: [] };
+      const segments = [];
+      const shouldChunk = chunkList.length > 1 || sessionDurationSeconds >= 300;
+
+      if (!shouldChunk) {
+        const blob = new Blob(chunkList.map(c => c.blob), { type: chunkList[0]?.blob?.type || 'audio/webm' });
+        showToast(`Transcribing ${label} audio...`, "info");
+        const text = await transcribeBlob(blob);
+        if (text?.trim()) segments.push({ speaker: label, startTime: chunkList[0].startTime || 0, text: text.trim() });
+      } else {
+        for (let i = 0; i < chunkList.length; i++) {
+          const chunk = chunkList[i];
+          const progressMsg = `Transcribing ${label} chunk ${i + 1} of ${chunkList.length}...`;
+          if (transStatEl) transStatEl.innerText = progressMsg;
+          showToast(progressMsg, "info");
+
+          let chunkText = "";
+          try {
+            chunkText = await transcribeBlob(chunk.blob);
+          } catch (chunkErr) {
+            console.warn(`${label} chunk ${i} transcription failed:`, chunkErr);
+            chunkText = `[Transcription failed for ${formatDuration(chunk.startTime)} - ${formatDuration(chunk.endTime)}]`;
+          }
+          if (chunkText?.trim()) segments.push({ speaker: label, startTime: chunk.startTime || 0, text: chunkText.trim() });
+        }
+      }
+
+      return { text: segments.map(s => s.text).join(" ").trim(), segments };
+    }
+
     let finalizedTranscript = "";
+    let analysisTranscript = "";
+    let transcriptSegments = [];
     
+    const youChunks = chunks.filter(c => !c.speaker || c.speaker === "you");
+    const interviewerChunks = chunks.filter(c => c.speaker === "interviewer");
+    const youResult = await transcribeChunkList(youChunks, "You");
+    analysisTranscript = youResult.text;
+    transcriptSegments = [...youResult.segments];
+
+    if (mode === "full" && interviewerChunks.length > 0) {
+      const interviewerResult = await transcribeChunkList(interviewerChunks, "Interviewer");
+      transcriptSegments.push(...interviewerResult.segments);
+    }
+
+    transcriptSegments.sort((a, b) => a.startTime - b.startTime);
+    finalizedTranscript = transcriptSegments
+      .map(s => `${s.speaker}: ${s.text}`)
+      .join("\n\n")
+      .trim();
+    if (mode !== "full") {
+      finalizedTranscript = analysisTranscript;
+    }
+
+    // Legacy mixed-audio path kept unreachable while the speaker-aware path above is active.
+    if (false) {
     // Transcription Strategy: chunk-by-chunk for long recordings (>= 300s), single blob for short
     if (sessionDurationSeconds >= 300 && chunks.length > 1) {
       const textParts = [];
@@ -1724,12 +1866,14 @@ async function processRecordedAudio() {
       }
     }
 
+    }
+
     if (transStatEl) {
       transStatEl.innerText = "DONE";
       transStatEl.style.color = "var(--success-color)";
     }
 
-    if (!finalizedTranscript?.trim()) {
+    if (!analysisTranscript?.trim()) {
       showToast("Audio captured, but transcription was unclear.", "warning");
       const box = document.getElementById("live-transcript-box");
       if (box) {
@@ -1751,27 +1895,45 @@ async function processRecordedAudio() {
     // Show transcript to user
     const box = document.getElementById("live-transcript-box");
     if (box) {
-      box.innerHTML = `<p><span class="transcript-speaker-you">You:</span> ${finalizedTranscript}</p>`;
+      if (transcriptSegments.length > 0) {
+        box.innerHTML = transcriptSegments.map(segment => {
+          const cls = segment.speaker === "You" ? "transcript-speaker-you" : "transcript-speaker-other";
+          return `<p><span class="${cls}">${segment.speaker}:</span> ${segment.text}</p>`;
+        }).join("");
+      } else {
+        box.innerHTML = `<p><span class="transcript-speaker-you">You:</span> ${analysisTranscript}</p>`;
+      }
     }
-    const wordCount = finalizedTranscript.trim().split(/\s+/).filter(Boolean).length;
-    document.getElementById("word-count-display").innerText = `${wordCount} words spoken`;
+    const wordCount = analysisTranscript.trim().split(/\s+/).filter(Boolean).length;
+    document.getElementById("word-count-display").innerText =
+      mode === "full" ? `${wordCount} words by you` : `${wordCount} words spoken`;
 
-    // 3. Word Count check (Transcript Quality Gate)
-    if (wordCount < 5) {
-      showToast("Transcript is too short or unclear. Please record at least 10–15 seconds of clear speech.", "warning");
+    // ── Transcript Quality Gate ──────────────────────────────────────────────
+    // Threshold: 10 words minimum (raised from 5 to prevent hallucinated analysis).
+    // Also check words-per-minute: fewer than 5 wpm for a long recording almost
+    // always means transcription captured nothing real — the AI would hallucinate.
+    const recordingMinutes = sessionDurationSeconds / 60;
+    const wordsPerMinute = recordingMinutes > 0 ? wordCount / recordingMinutes : 0;
+    const suspiciouslyThin = sessionDurationSeconds >= 30 && wordCount < 10;
+
+    if (wordCount < 10 || suspiciouslyThin) {
+      showToast("Transcript is too short or unclear. Please record at least 15 seconds of clear speech.", "warning");
       if (box) {
         box.innerHTML += `
           <div class="warning-box" style="margin-top: 1rem; padding: 1rem; background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.25); border-radius: 8px;">
-            <h4 style="color: var(--text-warning); margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: bold;">Transcript Too Short</h4>
-            <p style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: var(--text-muted);">Audio captured, but transcription was unclear or too short (${wordCount} words).</p>
+            <h4 style="color: var(--text-warning); margin: 0 0 0.5rem 0; font-size: 0.95rem; font-weight: bold;">Transcript Too Short to Analyze</h4>
+            <p style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: var(--text-muted);">Only ${wordCount} word${wordCount === 1 ? '' : 's'} were transcribed from ${formatDuration(sessionDurationSeconds)} of audio. Analysis requires at least 10 words to avoid inaccurate feedback.</p>
             <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
-              <li>Try speaking closer to the mic.</li>
-              <li>Check Chrome microphone input device.</li>
-              <li>Use at least 10–15 seconds of full sentences.</li>
+              <li>Speak clearly and close to the microphone.</li>
+              <li>Check the selected microphone in Chrome settings.</li>
+              <li>Record at least 15 seconds of continuous speech.</li>
+              <li>If using Local Whisper, ensure the server is running.</li>
             </ul>
           </div>
         `;
       }
+      // Save transcript even if too short — don't lose what was captured.
+      // Only skip the analysis step.
       await localStore.deleteChunksForSession(activeSessionId);
       await localStore.deleteActiveSession(activeSessionId);
       await removeLocalStorage("active_session_id");
@@ -1783,6 +1945,24 @@ async function processRecordedAudio() {
     const analysisProvider = await getLocalStorage("analysis_provider") || "local_ollama";
     let analysis;
 
+    async function analyzeSectionWithFallback(text, duration, sectionMode) {
+      if (analysisProvider === "local_ollama") {
+        return await analyzeTranscriptLocal(text, duration, sectionMode);
+      }
+      const geminiKey = await getLocalStorage("gemini_api_key");
+      if (!geminiKey) {
+        showToast("Gemini API key is not set. Falling back to local Ollama.", "warning");
+        return await analyzeTranscriptLocal(text, duration, sectionMode);
+      }
+      try {
+        return await analyzeTranscript(geminiKey, text, model);
+      } catch (err) {
+        console.warn("[TalkFlow] Gemini analysis failed, falling back to local Ollama:", err);
+        showToast("Gemini analysis failed. Falling back to local Ollama.", "warning");
+        return await analyzeTranscriptLocal(text, duration, sectionMode);
+      }
+    }
+
     const analStatEl = document.getElementById("rec-stat-transcription");
     if (analStatEl) {
       analStatEl.innerText = "ANALYZING...";
@@ -1791,7 +1971,7 @@ async function processRecordedAudio() {
 
     // Analysis Strategy: section-by-section for long transcripts (>= 1000 words), single prompt for short
     if (wordCount >= 1000) {
-      const words = finalizedTranscript.split(/\s+/).filter(Boolean);
+      const words = analysisTranscript.split(/\s+/).filter(Boolean);
       const sections = [];
       const SECTION_SIZE = 750;
       for (let i = 0; i < words.length; i += SECTION_SIZE) {
@@ -1806,14 +1986,7 @@ async function processRecordedAudio() {
         if (analStatEl) analStatEl.innerText = progressMsg;
         showToast(progressMsg, "info");
 
-        let secAnalysis;
-        if (analysisProvider === "local_ollama") {
-          secAnalysis = await analyzeTranscriptLocal(sections[i], sectionDuration, mode);
-        } else {
-          const geminiKey = await getLocalStorage("gemini_api_key");
-          if (!geminiKey) throw new Error('Gemini API key is not set.');
-          secAnalysis = await analyzeTranscript(geminiKey, sections[i], model);
-        }
+        const secAnalysis = await analyzeSectionWithFallback(sections[i], sectionDuration, mode);
         sectionAnalyses.push(secAnalysis);
       }
 
@@ -1881,23 +2054,13 @@ async function processRecordedAudio() {
 
     } else {
       // Single prompt analysis for shorter recordings
-      if (analysisProvider === "local_ollama") {
-        showToast("Analyzing speech locally with Ollama...", "info");
-        analysis = await analyzeTranscriptLocal(finalizedTranscript, sessionDurationSeconds, mode);
-      } else {
-        const geminiKey = await getLocalStorage("gemini_api_key");
-        if (!geminiKey) {
-          showToast("Gemini API key is not set. Go to Settings and add your key for Gemini analysis.", "error");
-          switchTab("tab-settings");
-          if (analStatEl) {
-            analStatEl.innerText = "FAILED";
-            analStatEl.style.color = "var(--danger-color)";
-          }
-          return;
-        }
-        showToast("Analyzing speech with Gemini Cloud...", "info");
-        analysis = await analyzeTranscript(geminiKey, finalizedTranscript, model);
-      }
+      showToast(
+        analysisProvider === "local_ollama"
+          ? "Analyzing speech locally with Ollama..."
+          : "Analyzing speech with Gemini Cloud...",
+        "info"
+      );
+      analysis = await analyzeSectionWithFallback(analysisTranscript, sessionDurationSeconds, mode);
     }
 
     if (analStatEl) {
@@ -1938,7 +2101,8 @@ async function processRecordedAudio() {
       correctionsCount: analysis.corrections?.length || 0,
       fillerWords: analysis.fillerWords || {},
       analysis,
-      rawText: finalizedTranscript
+      rawText: finalizedTranscript,
+      analysisText: analysisTranscript
     };
 
     const newId = await saveSession(sessionData);
@@ -2437,7 +2601,7 @@ async function startPracticeListening() {
           micText.innerText = "Ready to record";
           return;
         }
-        const model = await getLocalStorage("gemini_model") || "gemini-2.0-flash";
+        const model = await getLocalStorage("gemini_model") || "gemini-2.5-flash";
         resultText = await transcribeAudioGemini(geminiKey, audioBlob, model);
       }
 
@@ -3027,6 +3191,32 @@ document.addEventListener("DOMContentLoaded", async () => {
   const btnRefreshDiag = document.getElementById("btn-refresh-diagnostics");
   if (btnRefreshDiag) {
     btnRefreshDiag.addEventListener("click", refreshDiagnostics);
+  }
+
+  const btnRunDiagnostics = document.getElementById("btn-run-diagnostics");
+  if (btnRunDiagnostics) {
+    btnRunDiagnostics.addEventListener("click", runDiagnostics);
+  }
+
+  const btnCopyDiagnostics = document.getElementById("btn-copy-diagnostics");
+  if (btnCopyDiagnostics) {
+    btnCopyDiagnostics.addEventListener("click", async () => {
+      const content = document.getElementById("diagnostics-modal-content");
+      try {
+        await navigator.clipboard.writeText(content?.textContent || "");
+        showToast("Diagnostics copied!", "success");
+      } catch (err) {
+        showToast(`Could not copy diagnostics: ${err.message}`, "error");
+      }
+    });
+  }
+
+  const btnCloseDiagnostics = document.getElementById("btn-close-diagnostics");
+  if (btnCloseDiagnostics) {
+    btnCloseDiagnostics.addEventListener("click", () => {
+      const modal = document.getElementById("diagnostics-modal");
+      if (modal) modal.style.display = "none";
+    });
   }
 
   // Analysis session selection
