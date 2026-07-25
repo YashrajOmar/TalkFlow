@@ -1,0 +1,30 @@
+{
+  "name": "@codeon/code-analysis",
+  "version": "0.1.0",
+  "description": "AST-based code analysis engine — Tree-sitter + CFG + 6-layer analysis",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test:unit": "vitest run",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src tests --ext .ts"
+  },
+  "dependencies": {
+    "web-tree-sitter": "^0.22.6",
+    "@codeon/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9",
+    "@types/node": "^22.0.0"
+  }
+}

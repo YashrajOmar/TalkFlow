@@ -1,0 +1,21 @@
+{
+  "name": "@codeon/scrapers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test:unit": "vitest run",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "node-html-parser": "^7.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^20.0.0",
+    "vitest": "^2.1.0"
+  }
+}

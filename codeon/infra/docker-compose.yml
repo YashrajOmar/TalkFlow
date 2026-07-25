@@ -1,0 +1,64 @@
+name: codeon
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: codeon-postgres
+    environment:
+      POSTGRES_USER: codeon
+      POSTGRES_PASSWORD: codeon_dev
+      POSTGRES_DB: codeon_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/:/docker-entrypoint-initdb.d/
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U codeon -d codeon_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: codeon-redis
+    ports:
+      - '6379:6379'
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+      target: development
+    container_name: codeon-api
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://codeon:codeon_dev@postgres:5432/codeon_dev
+      REDIS_URL: redis://redis:6379
+      PORT: 3001
+    env_file:
+      - ../.env.local
+    volumes:
+      - ..:/app
+      - /app/node_modules
+      - /app/.pnpm-store
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: pnpm --filter @codeon/api dev
+
+volumes:
+  postgres_data:
+  redis_data:
